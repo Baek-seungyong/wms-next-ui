@@ -1,12 +1,22 @@
+// components/types.ts
+
+// 주문 상태 타입
 export type OrderStatus = "대기" | "출고중" | "보류" | "완료";
 
+// ⭐ 수도권/비수도권/차량출고 구분 타입
+export type ShippingZone = "수도권" | "비수도권" | "차량출고";
+
+// 주문 데이터 타입
 export type Order = {
-  id: string;
-  customer: string;
+  id: string;              // 실제 키값 (긴급출고도 내부적으로는 고유 ID)
+  customer: string;        // 일반 주문: 고객명 / 긴급출고: 상품명
   dueDate: string;
   status: OrderStatus;
+  zone?: ShippingZone;
+  isEmergency?: boolean;   // ⭐ 긴급출고 여부
 };
 
+// 품목(라인아이템) 타입
 export type OrderItem = {
   code: string;
   name: string;
@@ -15,56 +25,18 @@ export type OrderItem = {
   lowStock?: boolean;
 };
 
-export type PalletInfo = {
-  id: string;
-  floor: "3-1 풀파렛트" | "2-1 잔량파렛트";
-  location: string;
-  boxQty: number;
-  looseQty: number;
-  called: boolean;
-};
-
-export const LOCATIONS = [
-  "1-1 생산라인",
-  "1-2 입출고라인",
-  "2-1 잔량파렛트창고",
-  "2-2 피킹창고",
-  "3-1 풀파렛트창고",
-] as const;
-
-export type LocationType = (typeof LOCATIONS)[number];
-
-export type ManualAdjustLog = {
-  id: number;
-  timestamp: string;
-  palletId: string;
-  productCode: string;
-  productName: string;
-  qtyBox: number;
-  qtyEa: number;
-  location: LocationType;
-  mode: "입고" | "출고";
-};
-
-export function statusBadgeClass(status: OrderStatus) {
+// 상태 뱃지 CSS
+export const statusBadgeClass = (status: OrderStatus): string => {
   switch (status) {
     case "대기":
-      return "bg-gray-100 text-gray-700";
+      return "bg-gray-200 text-gray-700";
     case "출고중":
       return "bg-blue-100 text-blue-700";
     case "보류":
-      return "bg-yellow-100 text-yellow-800";
+      return "bg-yellow-100 text-yellow-700";
     case "완료":
       return "bg-green-100 text-green-700";
     default:
-      return "bg-gray-100 text-gray-700";
+      return "bg-gray-200 text-gray-700";
   }
-}
-
-export function formatTime(date: Date) {
-  return [
-    String(date.getHours()).padStart(2, "0"),
-    String(date.getMinutes()).padStart(2, "0"),
-    String(date.getSeconds()).padStart(2, "0"),
-  ].join(":");
-}
+};
