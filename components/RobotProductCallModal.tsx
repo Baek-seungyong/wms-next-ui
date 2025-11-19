@@ -1,7 +1,7 @@
 // components/RobotProductCallModal.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Pallet = {
   id: string;          // 파렛트 번호
@@ -15,18 +15,16 @@ type Pallet = {
 type Props = {
   open: boolean;
   onClose: () => void;
-
-  // 일반 호출 / 긴급 호출 구분
   mode: "manual" | "emergency";
 
-  // 선택 완료 후 상위로 넘길 때 사용
+  // 일반 수동 호출(지금은 안내만)
   onConfirmSelection?: (pallets: Pallet[]) => void;
 
-  // ✅ 긴급 호출용 콜백 (page.tsx에서 받는 그대로)
-  onConfirmEmergency?: (productName: string, qty: number) => void;
+  // 🔥 긴급 호출용 : 여러 상품 전달
+  onConfirmEmergency?: (items: { code: string; name: string }[]) => void;
 };
 
-// 🔹 데모용 상품 4개 × 파렛트 4개 = 16개
+/** 🔹 데모용 상품 4개 × 파렛트 4개씩 = 16개 */
 const ALL_PALLETS: Pallet[] = [
   // P-001 : PET 500ml 투명
   {
@@ -168,33 +166,19 @@ const ALL_PALLETS: Pallet[] = [
 export function RobotProductCallModal({
   open,
   onClose,
-  mode,
+  mode = "manual",
   onConfirmSelection,
   onConfirmEmergency,
 }: Props) {
+  // ---------------------- state ----------------------
   const [searchTerm, setSearchTerm] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
-
   const [leftChecked, setLeftChecked] = useState<string[]>([]);
   const [rightChecked, setRightChecked] = useState<string[]>([]);
   const [selectedPallets, setSelectedPallets] = useState<Pallet[]>([]);
 
-
-  /** 상태 초기화 함수 – 창 닫힐 때마다 호출 */
-  const resetState = () => {
-    setSearchTerm("");
-    setHasSearched(false);
-    setLeftChecked([]);
-    setRightChecked([]);
-    setSelectedPallets([]);
-  };
-
-  const handleClose = () => {
-    resetState();
-    onClose();
-  };
-
-  // 🔍 검색 결과 – 검색하기 전에는 항상 빈 배열
+  // ---------------------- memo values ----------------------
+  // 검색 결과
   const searchResults = useMemo(() => {
     if (!hasSearched || !searchTerm.trim()) return [];
     const q = searchTerm.trim().toLowerCase();
@@ -216,27 +200,42 @@ export function RobotProductCallModal({
     [selectedPallets],
   );
 
-  // 우측 상품별 요약 (상품명 기준 집계)
+  // 상품별 요약 (오른쪽 아래 표시용)
   const productSummary = useMemo(() => {
     const map = new Map<
       string,
-      { name: string; box: number; ea: number }
+      {
+        box: number;
+        ea: number;
+      }
     >();
 
     selectedPallets.forEach((p) => {
-      const key = `${p.productCode}|${p.productName}`;
-      const prev = map.get(key) ?? {
-        name: p.productName,
-        box: 0,
-        ea: 0,
-      };
-      prev.box += p.boxQty;
-      prev.ea += p.eaQty;
-      map.set(key, prev);
+      const current = map.get(p.productName) ?? { box: 0, ea: 0 };
+      current.box += p.boxQty;
+      current.ea += p.eaQty;
+      map.set(p.productName, current);
     });
 
-    return Array.from(map.values());
+    // [ [name, {box, ea}], ... ]
+    return Array.from(map.entries());
   }, [selectedPallets]);
+
+  // ---------------------- helpers ----------------------
+  const resetState = () => {
+    setSearchTerm("");
+    setHasSearched(false);
+    setLeftChecked([]);
+    setRightChecked([]);
+    setSelectedPallets([]);
+  };
+
+  // 모달이 닫힐 때마다 내부 상태 초기화
+  useEffect(() => {
+    if (!open) {
+      resetState();
+    }
+  }, [open]);
 
   const onSearchClick = () => {
     setHasSearched(true);
@@ -253,7 +252,8 @@ export function RobotProductCallModal({
 
       leftChecked.forEach((id) => {
         const p = searchResults.find((x) => x.id === id);
-        if (p && !map.has(p.id)) {
+        if (!p) return;
+        if (!map.has(p.id)) {
           map.set(p.id, p);
         }
       });
@@ -273,63 +273,87 @@ export function RobotProductCallModal({
     setRightChecked([]);
   };
 
-  /** ✅ 선택 파렛트 호출 버튼 */
+  // 선택 파렛트 호출
   const handleConfirm = () => {
-    if (selectedPallets.length === 0) return;
+    if (selectedPallets.length === 0) {
+      alert("호출할 파렛트를 선택해 주세요.");
+      return;
+    }
 
-    onConfirmSelection?.(selectedPallets);
+    if (mode === "emergency" && onConfirmEmergency) {
+      // 선택된 파렛트의 상품만 뽑아서 중복 제거
+      const productMap = new Map<string, string>();
+      selectedPallets.forEach((p) => {
+        productMap.set(p.productCode, p.productName);
+      });
 
-    alert(
-      `AMR ${
-        mode === "emergency" ? "긴급" : "수동"
-      } 호출: 파렛트 ${selectedPallets.length}개, 총 ${totalBox.toLocaleString()} BOX / ${totalEa.toLocaleString()} EA가 호출됩니다.`,
-    );
+      const items = Array.from(productMap.entries()).map(([code, name]) => ({
+        code,
+        name,
+      }));
+
+      if (items.length === 0) {
+        alert("긴급 호출할 상품이 없습니다.");
+        return;
+      }
+
+      onConfirmEmergency(items);
+
+      alert(
+        `${items[0].name}${
+          items.length > 1 ? ` 외 ${items.length - 1}개 품목` : ""
+        } 기준으로 긴급출고 주문이 생성됩니다.`,
+      );
+    } else {
+      // 수동 호출: 단순 안내
+      onConfirmSelection?.(selectedPallets);
+      alert(`선택한 파렛트 ${selectedPallets.length}개를 호출합니다.`);
+    }
 
     resetState();
     onClose();
   };
 
-  /** ✅ 자동 호출 버튼 – 검색 결과가 한 종류의 상품일 때만 */
+  // 자동 호출 (검색 결과가 한 상품일 때만)
   const handleAutoCall = () => {
     if (!hasSearched || searchResults.length === 0) {
-      alert("먼저 상품을 검색해 주세요.");
+      alert("먼저 상품을 검색한 후 자동 호출을 사용할 수 있습니다.");
       return;
     }
 
-    // 검색 결과 내 상품 종류 수 체크
-    const productKeys = Array.from(
-      new Set(
-        searchResults.map(
-          (p) => `${p.productCode}|${p.productName}`,
-        ),
-      ),
+    const uniqueProducts = Array.from(
+      new Set(searchResults.map((p) => p.productCode)),
     );
 
-    if (productKeys.length !== 1) {
+    if (uniqueProducts.length !== 1) {
       alert(
-        "검색 결과에 여러 종류의 상품이 포함되어 있어 자동 호출을 할 수 없습니다.\n상품코드 등을 조금 더 구체적으로 입력해 주세요.",
+        "검색 결과에 여러 상품이 섞여 있어 자동 호출을 할 수 없습니다.\n검색어를 더 구체적으로 입력해 주세요.",
       );
       return;
     }
 
-    // "가장 가까운" 파렛트 1개 – 일단 첫 번째로 간주
     const target = searchResults[0];
 
-    onConfirmSelection?.([target]);
-
-    alert(
-      `AMR 자동 호출: ${target.productName} 1파렛트(${target.id})가 호출됩니다.`,
-    );
+    if (mode === "emergency" && onConfirmEmergency) {
+      onConfirmEmergency([
+        { code: target.productCode, name: target.productName },
+      ]);
+      alert(
+        `긴급출고로 ${target.productName} 1파렛트(${target.id})를 자동 호출합니다.`,
+      );
+    } else {
+      onConfirmSelection?.([target]);
+      alert(`${target.productName} 1파렛트(${target.id})를 자동 호출합니다.`);
+    }
 
     resetState();
     onClose();
   };
 
+  // ✅ 모든 hook 호출 이후에만 open 체크
+  if (!open) return null;
 
-  if (!open) {
-    return null;
-  }
-
+  // ---------------------- JSX ----------------------
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-[980px] h-[620px] flex flex-col">
@@ -338,6 +362,11 @@ export function RobotProductCallModal({
           <div>
             <h2 className="text-sm font-semibold">
               AMR 수동 호출 · 로봇 / 제품 호출
+              {mode === "emergency" && (
+                <span className="ml-2 px-2 py-0.5 rounded-full text-[11px] bg-red-50 text-red-600 border border-red-100">
+                  긴급 호출 모드
+                </span>
+              )}
             </h2>
             <p className="mt-0.5 text-[11px] text-gray-500">
               제품을 검색하여 해당 제품이 적재된 파렛트를 선택하고, 여러
@@ -347,7 +376,10 @@ export function RobotProductCallModal({
           <button
             type="button"
             className="text-gray-400 hover:text-gray-600 text-lg"
-            onClick={handleClose}
+            onClick={() => {
+              resetState();
+              onClose();
+            }}
           >
             ×
           </button>
@@ -355,23 +387,19 @@ export function RobotProductCallModal({
 
         {/* 바디: 좌 / 우 패널 */}
         <div className="flex-1 px-5 py-4 grid grid-cols-[1fr_auto_1fr] gap-4">
-          {/* 🔹 좌측 : 검색 & 검색 결과(파렛트 목록) */}
+          {/* 좌측 : 검색 & 검색 결과 */}
           <div className="flex flex-col border rounded-xl bg-gray-50/60">
-            {/* 검색 영역 */}
             <div className="px-3 py-2 border-b">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs font-semibold text-gray-800">
-                  검색
-                </p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-gray-800">검색</p>
                 <button
                   type="button"
                   onClick={handleAutoCall}
-                  className="px-2 py-0.5 rounded-md bg-orange-500 text-white text-[11px] hover:bg-orange-600"
+                  className="px-3 py-1 rounded-full text-[11px] border border-blue-500 text-blue-600 hover:bg-blue-50"
                 >
                   자동 호출
                 </button>
               </div>
-
               <div className="flex items-center gap-2">
                 <input
                   value={searchTerm}
@@ -392,7 +420,6 @@ export function RobotProductCallModal({
               </p>
             </div>
 
-            {/* 검색 결과 목록 */}
             <div className="flex-1 overflow-auto px-3 py-2">
               <p className="text-[11px] text-gray-500 mb-1">
                 검색 결과 파렛트 목록 ({searchResults.length}개)
@@ -406,8 +433,7 @@ export function RobotProductCallModal({
                         type="checkbox"
                         checked={
                           searchResults.length > 0 &&
-                          leftChecked.length ===
-                            searchResults.length
+                          leftChecked.length === searchResults.length
                         }
                         onChange={(e) =>
                           setLeftChecked(
@@ -422,9 +448,7 @@ export function RobotProductCallModal({
                     <th className="p-1 text-left">파렛트 위치</th>
                     <th className="p-1 text-left">상품명</th>
                     <th className="p-1 text-right w-16">BOX</th>
-                    <th className="p-1 text-right w-20">
-                      낱개(EA)
-                    </th>
+                    <th className="p-1 text-right w-20">낱개(EA)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -445,8 +469,8 @@ export function RobotProductCallModal({
                         colSpan={6}
                         className="p-3 text-center text-[11px] text-gray-400"
                       >
-                        상품을 검색하면 해당 상품이 적재된 파렛트
-                        목록이 표시됩니다.
+                        상품을 검색하면 해당 상품이 적재된 파렛트 목록이
+                        표시됩니다.
                       </td>
                     </tr>
                   )}
@@ -471,12 +495,8 @@ export function RobotProductCallModal({
                         />
                       </td>
                       <td className="p-1 align-middle">{p.id}</td>
-                      <td className="p-1 align-middle">
-                        {p.location}
-                      </td>
-                      <td className="p-1 align-middle">
-                        {p.productName}
-                      </td>
+                      <td className="p-1 align-middle">{p.location}</td>
+                      <td className="p-1 align-middle">{p.productName}</td>
                       <td className="p-1 align-middle text-right">
                         {p.boxQty.toLocaleString()}
                       </td>
@@ -490,7 +510,7 @@ export function RobotProductCallModal({
             </div>
           </div>
 
-          {/* 🔸 가운데 : 화살표 버튼 */}
+          {/* 가운데 화살표 버튼 */}
           <div className="flex flex-col items-center justify-center gap-2">
             <button
               type="button"
@@ -512,7 +532,7 @@ export function RobotProductCallModal({
             </button>
           </div>
 
-          {/* 🔹 우측 : 선택된 전체 내역 */}
+          {/* 우측 : 선택된 전체 내역 */}
           <div className="flex flex-col border rounded-xl bg-gray-50/60">
             <div className="px-3 py-2 border-b flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-800">
@@ -540,8 +560,7 @@ export function RobotProductCallModal({
                         type="checkbox"
                         checked={
                           selectedPallets.length > 0 &&
-                          rightChecked.length ===
-                            selectedPallets.length
+                          rightChecked.length === selectedPallets.length
                         }
                         onChange={(e) =>
                           setRightChecked(
@@ -552,15 +571,11 @@ export function RobotProductCallModal({
                         }
                       />
                     </th>
-                    <th className="p-1 text-left w-24">
-                      파렛트ID
-                    </th>
+                    <th className="p-1 text-left w-24">파렛트ID</th>
                     <th className="p-1 text-left">파렛트 위치</th>
                     <th className="p-1 text-left">상품명</th>
                     <th className="p-1 text-right w-16">BOX</th>
-                    <th className="p-1 text-right w-20">
-                      낱개(EA)
-                    </th>
+                    <th className="p-1 text-right w-20">낱개(EA)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -570,8 +585,8 @@ export function RobotProductCallModal({
                         colSpan={6}
                         className="p-3 text-center text-[11px] text-gray-400"
                       >
-                        아직 선택된 파렛트가 없습니다. 좌측에서
-                        파렛트를 선택하여 추가해 주세요.
+                        아직 선택된 파렛트가 없습니다. 좌측에서 파렛트를
+                        선택하여 추가해 주세요.
                       </td>
                     </tr>
                   )}
@@ -590,20 +605,14 @@ export function RobotProductCallModal({
                             setRightChecked((prev) =>
                               checked
                                 ? [...prev, p.id]
-                                : prev.filter(
-                                    (id) => id !== p.id,
-                                  ),
+                                : prev.filter((id) => id !== p.id),
                             );
                           }}
                         />
                       </td>
                       <td className="p-1 align-middle">{p.id}</td>
-                      <td className="p-1 align-middle">
-                        {p.location}
-                      </td>
-                      <td className="p-1 align-middle">
-                        {p.productName}
-                      </td>
+                      <td className="p-1 align-middle">{p.location}</td>
+                      <td className="p-1 align-middle">{p.productName}</td>
                       <td className="p-1 align-middle text-right">
                         {p.boxQty.toLocaleString()}
                       </td>
@@ -618,10 +627,9 @@ export function RobotProductCallModal({
 
             {/* 하단 요약 & 버튼 */}
             <div className="px-3 py-2 border-t flex items-center justify-between text-[11px] text-gray-600">
-              <div>
+              <div className="space-y-0.5">
                 <p>
-                  · 선택된 파렛트 {selectedPallets.length}개 기준,
-                  총{" "}
+                  · 선택된 파렛트 {selectedPallets.length}개 기준, 총{" "}
                   <span className="font-semibold text-gray-800">
                     {totalBox.toLocaleString()}
                   </span>{" "}
@@ -631,27 +639,30 @@ export function RobotProductCallModal({
                   </span>{" "}
                   EA 호출 예정입니다.
                 </p>
-                {productSummary.length > 0 ? (
-                  <ul className="mt-1 list-disc pl-4 space-y-0.5">
-                    {productSummary.map((s) => (
-                      <li key={s.name}>
-                        {s.name}:{" "}
-                        {s.box.toLocaleString()} BOX /{" "}
-                        {s.ea.toLocaleString()} EA
-                      </li>
+
+                {productSummary.length > 0 && (
+                  <p>
+                    · 상품별 요약:&nbsp;
+                    {productSummary.map(([name, { box, ea }], idx) => (
+                      <span key={name}>
+                        {idx > 0 && " / "}
+                        <span className="font-semibold">{name}</span>{" "}
+                        {box.toLocaleString()} BOX / {ea.toLocaleString()} EA
+                      </span>
                     ))}
-                  </ul>
-                ) : (
-                  <p className="mt-1">
-                    · 선택된 상품이 없습니다.
                   </p>
                 )}
+
+                <p>· 실제 WMS 연동 시 각 파렛트의 위치 정보와 함께 전송됩니다.</p>
               </div>
               <div className="flex gap-2">
                 <button
                   type="button"
                   className="px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 text-xs hover:bg-gray-200"
-                  onClick={handleClose}
+                  onClick={() => {
+                    resetState();
+                    onClose();
+                  }}
                 >
                   취소
                 </button>

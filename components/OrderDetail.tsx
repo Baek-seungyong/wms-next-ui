@@ -21,7 +21,12 @@ export function OrderDetail({
   const hasLowStock = useMemo(() => items.some((i) => i.lowStock), [items]);
 
   // ⭐ 긴급출고 판단 로직 (EMG-로 시작)
-  const isEmergency = order.id.startsWith("EMG");
+  const isEmergency = !!order.isEmergency;
+
+const emergencyTitle =
+  items.length <= 1
+    ? items[0]?.name ?? ""
+    : `${items[0].name} 외`;
 
   // 수량 입력 Ref 처리 없이 간단하게 input 값을 읽도록 설계
   const handleCompleteEmergency = () => {
@@ -51,21 +56,24 @@ export function OrderDetail({
                 주문번호:{" "}
                 <span className="font-medium text-gray-900">{order.id}</span>
               </p>
-
-              <p>
-                고객명:{" "}
-                <span className="font-medium text-gray-900">
-                  {isEmergency ? items[0]?.name : order.customer}
-                </span>
-              </p>
-
-              <p>
-                납기일:{" "}
-                <span className="font-medium text-gray-900">
-                  {isEmergency ? "긴급" : order.dueDate}
-                </span>
-              </p>
-
+              {isEmergency ? (
+                <>
+                  <p>
+                    상품명(긴급):{" "}
+                    <span className="font-medium text-gray-900">
+                      {emergencyTitle}
+                    </span>
+                  </p>
+                  <p>
+                    납기일: <span className="font-medium text-gray-900">긴급</span>
+                  </p>
+                </>
+              ) : (
+                <p>
+                  납기일:{" "}
+                  <span className="font-medium text-gray-900">{order.dueDate}</span>
+                </p>
+              )}
               <p>
                 출고위치:{" "}
                 <span className="font-medium text-gray-900">
