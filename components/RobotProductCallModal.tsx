@@ -3,376 +3,667 @@
 
 import { useMemo, useState } from "react";
 
-type Mode = "normal" | "emergency";
+type Pallet = {
+  id: string;          // 파렛트 번호
+  productCode: string; // 상품코드
+  productName: string; // 상품명
+  location: string;    // 파렛트 위치
+  boxQty: number;      // 박스 수량
+  eaQty: number;       // 낱개 수량(EA)
+};
 
 type Props = {
   open: boolean;
-  mode?: Mode; // "normal" | "emergency"
   onClose: () => void;
-  // 긴급 모드일 때 선택 완료 시 호출
+
+  // 일반 호출 / 긴급 호출 구분
+  mode: "manual" | "emergency";
+
+  // 선택 완료 후 상위로 넘길 때 사용
+  onConfirmSelection?: (pallets: Pallet[]) => void;
+
+  // ✅ 긴급 호출용 콜백 (page.tsx에서 받는 그대로)
   onConfirmEmergency?: (productName: string, qty: number) => void;
 };
 
-// ─────────────────────────────────────────────
-// 🔹 데모용 상품/파렛트 Mock 데이터
-// ─────────────────────────────────────────────
-type DemoProduct = {
-  code: string;
-  name: string;
-};
-
-type DemoPallet = {
-  id: string;
-  productCode: string;
-  location: string;
-  rack: string;
-  boxQty: number;
-  eaQty: number;
-  status: "정상" | "부분";
-};
-
-const demoProducts: DemoProduct[] = [
-  { code: "P-001", name: "PET 500ml 투명" },
-  { code: "P-013", name: "PET 1L 반투명" },
-  { code: "C-201", name: "캡 28파이 화이트" },
-  { code: "L-009", name: "라벨 500ml 화이트" },
-];
-
-const demoPallets: DemoPallet[] = [
+// 🔹 데모용 상품 4개 × 파렛트 4개 = 16개
+const ALL_PALLETS: Pallet[] = [
+  // P-001 : PET 500ml 투명
   {
-    id: "PAL-3F-001",
+    id: "PAL-001-01",
     productCode: "P-001",
-    location: "3층 플랫파렛트",
-    rack: "3F-A-01",
+    productName: "PET 500ml 투명",
+    location: "3층 플랫파렛트 3F-A-01",
     boxQty: 10,
     eaQty: 1200,
-    status: "정상",
   },
   {
-    id: "PAL-3F-002",
-    productCode: "P-013",
-    location: "3층 플랫파렛트",
-    rack: "3F-B-05",
+    id: "PAL-001-02",
+    productCode: "P-001",
+    productName: "PET 500ml 투명",
+    location: "3층 플랫파렛트 3F-A-02",
     boxQty: 8,
-    eaQty: 800,
-    status: "부분",
+    eaQty: 960,
   },
   {
-    id: "PAL-2F-201",
-    productCode: "C-201",
-    location: "2층 잔량파렛트",
-    rack: "2F-C-12",
+    id: "PAL-001-03",
+    productCode: "P-001",
+    productName: "PET 500ml 투명",
+    location: "2층 잔량파렛트 2F-B-01",
     boxQty: 5,
     eaQty: 600,
-    status: "정상",
   },
   {
-    id: "PAL-2F-202",
+    id: "PAL-001-04",
+    productCode: "P-001",
+    productName: "PET 500ml 투명",
+    location: "2층 잔량파렛트 2F-B-02",
+    boxQty: 4,
+    eaQty: 480,
+  },
+
+  // P-013 : PET 1L 반투명
+  {
+    id: "PAL-013-01",
+    productCode: "P-013",
+    productName: "PET 1L 반투명",
+    location: "3층 플랫파렛트 3F-C-01",
+    boxQty: 6,
+    eaQty: 720,
+  },
+  {
+    id: "PAL-013-02",
+    productCode: "P-013",
+    productName: "PET 1L 반투명",
+    location: "3층 플랫파렛트 3F-C-02",
+    boxQty: 6,
+    eaQty: 720,
+  },
+  {
+    id: "PAL-013-03",
+    productCode: "P-013",
+    productName: "PET 1L 반투명",
+    location: "2층 잔량파렛트 2F-D-01",
+    boxQty: 3,
+    eaQty: 360,
+  },
+  {
+    id: "PAL-013-04",
+    productCode: "P-013",
+    productName: "PET 1L 반투명",
+    location: "2층 잔량파렛트 2F-D-02",
+    boxQty: 2,
+    eaQty: 240,
+  },
+
+  // C-201 : 캡 28파이 화이트
+  {
+    id: "PAL-201-01",
+    productCode: "C-201",
+    productName: "캡 28파이 화이트",
+    location: "3층 소형파렛트 3F-E-01",
+    boxQty: 20,
+    eaQty: 4000,
+  },
+  {
+    id: "PAL-201-02",
+    productCode: "C-201",
+    productName: "캡 28파이 화이트",
+    location: "3층 소형파렛트 3F-E-02",
+    boxQty: 15,
+    eaQty: 3000,
+  },
+  {
+    id: "PAL-201-03",
+    productCode: "C-201",
+    productName: "캡 28파이 화이트",
+    location: "2층 소형파렛트 2F-F-01",
+    boxQty: 12,
+    eaQty: 2400,
+  },
+  {
+    id: "PAL-201-04",
+    productCode: "C-201",
+    productName: "캡 28파이 화이트",
+    location: "2층 소형파렛트 2F-F-02",
+    boxQty: 10,
+    eaQty: 2000,
+  },
+
+  // L-009 : 라벨 500ml 화이트
+  {
+    id: "PAL-009-01",
     productCode: "L-009",
-    location: "2층 잔량파렛트",
-    rack: "2F-D-03",
-    boxQty: 7,
-    eaQty: 900,
-    status: "부분",
+    productName: "라벨 500ml 화이트",
+    location: "3층 라벨파렛트 3F-G-01",
+    boxQty: 30,
+    eaQty: 6000,
+  },
+  {
+    id: "PAL-009-02",
+    productCode: "L-009",
+    productName: "라벨 500ml 화이트",
+    location: "3층 라벨파렛트 3F-G-02",
+    boxQty: 25,
+    eaQty: 5000,
+  },
+  {
+    id: "PAL-009-03",
+    productCode: "L-009",
+    productName: "라벨 500ml 화이트",
+    location: "2층 라벨파렛트 2F-H-01",
+    boxQty: 18,
+    eaQty: 3600,
+  },
+  {
+    id: "PAL-009-04",
+    productCode: "L-009",
+    productName: "라벨 500ml 화이트",
+    location: "2층 라벨파렛트 2F-H-02",
+    boxQty: 12,
+    eaQty: 2400,
   },
 ];
-
-// ─────────────────────────────────────────────
 
 export function RobotProductCallModal({
   open,
-  mode = "normal",
   onClose,
+  mode,
+  onConfirmSelection,
   onConfirmEmergency,
 }: Props) {
-  if (!open) return null;
+  const [searchTerm, setSearchTerm] = useState("");
+  const [hasSearched, setHasSearched] = useState(false);
 
-  const isEmergency = mode === "emergency";
+  const [leftChecked, setLeftChecked] = useState<string[]>([]);
+  const [rightChecked, setRightChecked] = useState<string[]>([]);
+  const [selectedPallets, setSelectedPallets] = useState<Pallet[]>([]);
 
-  const [search, setSearch] = useState("");
-  const [searchedProduct, setSearchedProduct] = useState<DemoProduct | null>(null);
-  const [visiblePallets, setVisiblePallets] = useState<DemoPallet[]>([]);
-  const [selectedPalletIds, setSelectedPalletIds] = useState<string[]>([]);
 
-  // 선택된 파렛트 수 / 합계
-  const selectedPallets = useMemo(
-    () => visiblePallets.filter((p) => selectedPalletIds.includes(p.id)),
-    [visiblePallets, selectedPalletIds],
+  /** 상태 초기화 함수 – 창 닫힐 때마다 호출 */
+  const resetState = () => {
+    setSearchTerm("");
+    setHasSearched(false);
+    setLeftChecked([]);
+    setRightChecked([]);
+    setSelectedPallets([]);
+  };
+
+  const handleClose = () => {
+    resetState();
+    onClose();
+  };
+
+  // 🔍 검색 결과 – 검색하기 전에는 항상 빈 배열
+  const searchResults = useMemo(() => {
+    if (!hasSearched || !searchTerm.trim()) return [];
+    const q = searchTerm.trim().toLowerCase();
+
+    return ALL_PALLETS.filter(
+      (p) =>
+        p.productCode.toLowerCase().includes(q) ||
+        p.productName.toLowerCase().includes(q),
+    );
+  }, [searchTerm, hasSearched]);
+
+  // 우측 전체 내역 합계
+  const totalBox = useMemo(
+    () => selectedPallets.reduce((sum, p) => sum + p.boxQty, 0),
+    [selectedPallets],
+  );
+  const totalEa = useMemo(
+    () => selectedPallets.reduce((sum, p) => sum + p.eaQty, 0),
+    [selectedPallets],
   );
 
-  const selectedPalletCount = selectedPallets.length;
+  // 우측 상품별 요약 (상품명 기준 집계)
+  const productSummary = useMemo(() => {
+    const map = new Map<
+      string,
+      { name: string; box: number; ea: number }
+    >();
 
-  const totalBox = selectedPallets.reduce((sum, p) => sum + p.boxQty, 0);
-  const totalEa = selectedPallets.reduce((sum, p) => sum + p.eaQty, 0);
+    selectedPallets.forEach((p) => {
+      const key = `${p.productCode}|${p.productName}`;
+      const prev = map.get(key) ?? {
+        name: p.productName,
+        box: 0,
+        ea: 0,
+      };
+      prev.box += p.boxQty;
+      prev.ea += p.eaQty;
+      map.set(key, prev);
+    });
 
-  // 🔍 검색 버튼 클릭
-  const handleSearch = () => {
-    const keyword = search.trim();
-    if (!keyword) {
-      window.alert("상품 코드나 이름을 입력해 주세요.");
+    return Array.from(map.values());
+  }, [selectedPallets]);
+
+  const onSearchClick = () => {
+    setHasSearched(true);
+    setLeftChecked([]);
+  };
+
+  // ▶ 좌측(검색결과) → 우측(전체 내역) 이동
+  const moveToRight = () => {
+    if (leftChecked.length === 0) return;
+
+    setSelectedPallets((prev) => {
+      const map = new Map<string, Pallet>();
+      prev.forEach((p) => map.set(p.id, p));
+
+      leftChecked.forEach((id) => {
+        const p = searchResults.find((x) => x.id === id);
+        if (p && !map.has(p.id)) {
+          map.set(p.id, p);
+        }
+      });
+
+      return Array.from(map.values());
+    });
+
+    setLeftChecked([]);
+  };
+
+  // ◀ 우측 → 제거
+  const removeFromRight = () => {
+    if (rightChecked.length === 0) return;
+    setSelectedPallets((prev) =>
+      prev.filter((p) => !rightChecked.includes(p.id)),
+    );
+    setRightChecked([]);
+  };
+
+  /** ✅ 선택 파렛트 호출 버튼 */
+  const handleConfirm = () => {
+    if (selectedPallets.length === 0) return;
+
+    onConfirmSelection?.(selectedPallets);
+
+    alert(
+      `AMR ${
+        mode === "emergency" ? "긴급" : "수동"
+      } 호출: 파렛트 ${selectedPallets.length}개, 총 ${totalBox.toLocaleString()} BOX / ${totalEa.toLocaleString()} EA가 호출됩니다.`,
+    );
+
+    resetState();
+    onClose();
+  };
+
+  /** ✅ 자동 호출 버튼 – 검색 결과가 한 종류의 상품일 때만 */
+  const handleAutoCall = () => {
+    if (!hasSearched || searchResults.length === 0) {
+      alert("먼저 상품을 검색해 주세요.");
       return;
     }
 
-    const product =
-      demoProducts.find(
-        (p) =>
-          p.code.toLowerCase().includes(keyword.toLowerCase()) ||
-          p.name.toLowerCase().includes(keyword.toLowerCase()),
-      ) ?? null;
+    // 검색 결과 내 상품 종류 수 체크
+    const productKeys = Array.from(
+      new Set(
+        searchResults.map(
+          (p) => `${p.productCode}|${p.productName}`,
+        ),
+      ),
+    );
 
-    if (!product) {
-      setSearchedProduct(null);
-      setVisiblePallets([]);
-      setSelectedPalletIds([]);
-      window.alert("검색 결과가 없습니다. (데모용 4개 상품만 등록됨)");
+    if (productKeys.length !== 1) {
+      alert(
+        "검색 결과에 여러 종류의 상품이 포함되어 있어 자동 호출을 할 수 없습니다.\n상품코드 등을 조금 더 구체적으로 입력해 주세요.",
+      );
       return;
     }
 
-    setSearchedProduct(product);
-    const pallets = demoPallets.filter((p) => p.productCode === product.code);
-    setVisiblePallets(pallets);
-    setSelectedPalletIds([]);
-  };
+    // "가장 가까운" 파렛트 1개 – 일단 첫 번째로 간주
+    const target = searchResults[0];
 
-  // 개별 체크박스
-  const togglePallet = (id: string) => {
-    setSelectedPalletIds((prev) =>
-      prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id],
+    onConfirmSelection?.([target]);
+
+    alert(
+      `AMR 자동 호출: ${target.productName} 1파렛트(${target.id})가 호출됩니다.`,
     );
+
+    resetState();
+    onClose();
   };
 
-  // 전체 선택
-  const toggleAll = () => {
-    if (selectedPalletIds.length === visiblePallets.length) {
-      setSelectedPalletIds([]);
-    } else {
-      setSelectedPalletIds(visiblePallets.map((p) => p.id));
-    }
-  };
 
-  // 호출 버튼 (일반 / 긴급 공용)
-  const handleCallClick = () => {
-  const productName =
-    searchedProduct?.name || search.trim() || "긴급출고 상품";
-
-  if (selectedPallets.length === 0 && !isEmergency) {
-    // 일반 수동 호출일 때는 파렛트 선택 필수
-    window.alert("호출할 파렛트를 선택해 주세요.");
-    return;
+  if (!open) {
+    return null;
   }
-
-  if (isEmergency && onConfirmEmergency) {
-    // 🔥 수량은 여기서 정하지 않음. 주문 상세 화면에서 입력.
-    const qty = 0;
-
-    onConfirmEmergency(productName, qty);
-    window.alert(
-      "선택한 파렛트로 AMR를 긴급 호출하고, 긴급출고 주문을 생성합니다. (데모)",
-    );
-  } else {
-    window.alert(
-      `선택한 파렛트 ${selectedPalletCount}개에 대해 AMR를 호출합니다. (데모)`,
-    );
-  }
-
-  onClose();
-};
-
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl w-[980px] max-h-[80vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-2xl shadow-2xl w-[980px] h-[620px] flex flex-col">
         {/* 헤더 */}
-        <div className="px-5 py-3 border-b flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between px-5 py-3 border-b">
+          <div>
             <h2 className="text-sm font-semibold">
-              {isEmergency ? "긴급 호출 · 로봇 / 제품 호출" : "AMR 수동 호출 · 로봇 / 제품 호출"}
+              AMR 수동 호출 · 로봇 / 제품 호출
             </h2>
-            {isEmergency && (
-              <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[11px]">
-                긴급출고 주문 생성
-              </span>
-            )}
+            <p className="mt-0.5 text-[11px] text-gray-500">
+              제품을 검색하여 해당 제품이 적재된 파렛트를 선택하고, 여러
+              파렛트를 한 번에 호출할 수 있습니다.
+            </p>
           </div>
           <button
             type="button"
-            className="text-gray-500 hover:text-gray-700 text-sm"
-            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-lg"
+            onClick={handleClose}
           >
-            닫기 ✕
+            ×
           </button>
         </div>
 
-        {/* 바디 */}
-        <div className="flex-1 overflow-hidden flex divide-x">
-          {/* 좌측: 상품 검색 + 선택 정보 */}
-          <div className="w-[360px] flex flex-col p-4 gap-3">
-            <div>
-              <p className="text-[11px] text-gray-500 mb-1">
-                특정 제품을 기준으로 3층 플랫파렛트 / 2층 잔량파렛트를 조회하고, 호출할 파렛트를 선택합니다.
-              </p>
-              <label className="block text-[11px] text-gray-700 mb-1">상품 검색</label>
-              <div className="flex gap-2">
+        {/* 바디: 좌 / 우 패널 */}
+        <div className="flex-1 px-5 py-4 grid grid-cols-[1fr_auto_1fr] gap-4">
+          {/* 🔹 좌측 : 검색 & 검색 결과(파렛트 목록) */}
+          <div className="flex flex-col border rounded-xl bg-gray-50/60">
+            {/* 검색 영역 */}
+            <div className="px-3 py-2 border-b">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-gray-800">
+                  검색
+                </p>
+                <button
+                  type="button"
+                  onClick={handleAutoCall}
+                  className="px-2 py-0.5 rounded-md bg-orange-500 text-white text-[11px] hover:bg-orange-600"
+                >
+                  자동 호출
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <input
-                  className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-xs"
-                  placeholder="제품 코드 또는 이름 (예: P-001 / PET 500ml)"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs"
+                  placeholder="상품 코드 또는 상품명으로 검색 (예: P-001, PET 500ml)"
                 />
                 <button
                   type="button"
-                  className="px-3 py-1 rounded-md bg-gray-900 text-white text-xs"
-                  onClick={handleSearch}
+                  onClick={onSearchClick}
+                  className="px-3 py-1 rounded-md bg-gray-800 text-white text-xs"
                 >
                   검색
                 </button>
               </div>
-              <p className="mt-1 text-[11px] text-gray-500">
-                예시 상품: P-001, P-013, C-201, L-009 (또는 이름 일부로 검색)
+              <p className="mt-1 text-[11px] text-gray-400">
+                검색 후 해당 상품이 적재된 파렛트 목록이 아래에 표시됩니다.
               </p>
             </div>
 
-            <div className="flex-1 border rounded-lg p-3 bg-gray-50">
-              <p className="text-[11px] font-semibold mb-1">선택된 상품</p>
-              {searchedProduct ? (
-                <div className="space-y-1 text-[11px]">
-                  <p>
-                    코드:{" "}
-                    <span className="font-semibold">{searchedProduct.code}</span>
-                  </p>
-                  <p>
-                    상품명:{" "}
-                    <span className="font-semibold">{searchedProduct.name}</span>
-                  </p>
-                  <p className="mt-1 text-gray-500">
-                    아래 파렛트 목록은 이 상품이 적재된 파렛트만 표시됩니다.
-                  </p>
-                </div>
-              ) : (
-                <p className="text-[11px] text-gray-500">
-                  아직 선택된 상품이 없습니다. 상품을 검색해 주세요.
-                </p>
-              )}
-            </div>
+            {/* 검색 결과 목록 */}
+            <div className="flex-1 overflow-auto px-3 py-2">
+              <p className="text-[11px] text-gray-500 mb-1">
+                검색 결과 파렛트 목록 ({searchResults.length}개)
+              </p>
 
-            <div className="border rounded-lg p-3 bg-gray-50">
-              <p className="text-[11px] font-semibold mb-2">선택된 파렛트 합계</p>
-              <p className="text-[11px] text-gray-500">
-                전체 박스: <span className="font-semibold">{totalBox} BOX</span>
-              </p>
-              <p className="text-[11px] text-gray-500">
-                전체 수량: <span className="font-semibold">{totalEa} EA</span>
-              </p>
-              <p className="mt-1 text-[11px] text-gray-500">
-                여러 파렛트를 동시에 선택해서 호출할 수 있습니다.
-              </p>
-            </div>
-          </div>
-
-          {/* 우측: 파렛트 목록 */}
-          <div className="flex-1 flex flex-col p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[11px] text-gray-500">
-                3층 플랫파렛트와 2층 잔량파렛트를 한 화면에서 조회하고, 호출할 파렛트를 선택합니다.
-              </p>
-              <p className="text-[11px] text-gray-500">
-                선택된 파렛트 수:{" "}
-                <span className="font-semibold">{selectedPalletCount}개</span>
-              </p>
-            </div>
-
-            <div className="flex-1 border rounded-lg overflow-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 text-[11px] text-gray-500">
+              <table className="w-full text-[11px]">
+                <thead className="sticky top-0 bg-gray-50 border-b">
                   <tr>
-                    <th className="p-2 border-b w-10 text-center">
+                    <th className="w-6 p-1 text-center">
                       <input
                         type="checkbox"
-                        onChange={toggleAll}
                         checked={
-                          visiblePallets.length > 0 &&
-                          selectedPalletIds.length === visiblePallets.length
+                          searchResults.length > 0 &&
+                          leftChecked.length ===
+                            searchResults.length
+                        }
+                        onChange={(e) =>
+                          setLeftChecked(
+                            e.target.checked
+                              ? searchResults.map((p) => p.id)
+                              : [],
+                          )
                         }
                       />
                     </th>
-                    <th className="p-2 border-b text-left w-32">파렛트ID</th>
-                    <th className="p-2 border-b text-left w-40">위치</th>
-                    <th className="p-2 border-b text-left w-40">랙 / 상세위치</th>
-                    <th className="p-2 border-b text-center w-28">박스수량</th>
-                    <th className="p-2 border-b text-center w-28">낱개 수량</th>
-                    <th className="p-2 border-b text-center w-28">상태</th>
+                    <th className="p-1 text-left w-24">파렛트ID</th>
+                    <th className="p-1 text-left">파렛트 위치</th>
+                    <th className="p-1 text-left">상품명</th>
+                    <th className="p-1 text-right w-16">BOX</th>
+                    <th className="p-1 text-right w-20">
+                      낱개(EA)
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {visiblePallets.length === 0 ? (
+                  {hasSearched && searchResults.length === 0 && (
                     <tr>
                       <td
-                        colSpan={7}
-                        className="p-4 text-center text-[11px] text-gray-400"
+                        colSpan={6}
+                        className="p-3 text-center text-[11px] text-gray-400"
                       >
-                        상품을 검색하면 해당 상품이 적재된 파렛트 목록이 표시됩니다. (데모용
-                        4개 파렛트)
+                        검색 결과가 없습니다.
                       </td>
                     </tr>
-                  ) : (
-                    visiblePallets.map((p) => {
-                      const checked = selectedPalletIds.includes(p.id);
-                      return (
-                        <tr
-                          key={p.id}
-                          className={checked ? "bg-blue-50" : "hover:bg-gray-50"}
-                        >
-                          <td className="p-2 border-t text-center">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => togglePallet(p.id)}
-                            />
-                          </td>
-                          <td className="p-2 border-t">{p.id}</td>
-                          <td className="p-2 border-t">{p.location}</td>
-                          <td className="p-2 border-t">{p.rack}</td>
-                          <td className="p-2 border-t text-center">
-                            {p.boxQty.toLocaleString()} BOX
-                          </td>
-                          <td className="p-2 border-t text-center">
-                            {p.eaQty.toLocaleString()} EA
-                          </td>
-                          <td className="p-2 border-t text-center">
-                            {p.status === "정상" ? (
-                              <span className="px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-[11px]">
-                                재고 정상
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700 text-[11px]">
-                                부분 잔량
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
                   )}
+
+                  {!hasSearched && (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="p-3 text-center text-[11px] text-gray-400"
+                      >
+                        상품을 검색하면 해당 상품이 적재된 파렛트
+                        목록이 표시됩니다.
+                      </td>
+                    </tr>
+                  )}
+
+                  {searchResults.map((p) => (
+                    <tr
+                      key={p.id}
+                      className="border-b last:border-b-0 hover:bg-white"
+                    >
+                      <td className="p-1 text-center align-middle">
+                        <input
+                          type="checkbox"
+                          checked={leftChecked.includes(p.id)}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setLeftChecked((prev) =>
+                              checked
+                                ? [...prev, p.id]
+                                : prev.filter((id) => id !== p.id),
+                            );
+                          }}
+                        />
+                      </td>
+                      <td className="p-1 align-middle">{p.id}</td>
+                      <td className="p-1 align-middle">
+                        {p.location}
+                      </td>
+                      <td className="p-1 align-middle">
+                        {p.productName}
+                      </td>
+                      <td className="p-1 align-middle text-right">
+                        {p.boxQty.toLocaleString()}
+                      </td>
+                      <td className="p-1 align-middle text-right">
+                        {p.eaQty.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 🔸 가운데 : 화살표 버튼 */}
+          <div className="flex flex-col items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={moveToRight}
+              className="w-8 h-8 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center shadow hover:bg-blue-700 disabled:bg-gray-300"
+              disabled={leftChecked.length === 0}
+              title="선택 파렛트 추가"
+            >
+              ▶
+            </button>
+            <button
+              type="button"
+              onClick={removeFromRight}
+              className="w-8 h-8 rounded-full bg-gray-200 text-gray-700 text-xs flex items-center justify-center hover:bg-gray-300 disabled:bg-gray-100"
+              disabled={rightChecked.length === 0}
+              title="선택 파렛트 제거"
+            >
+              ◀
+            </button>
+          </div>
+
+          {/* 🔹 우측 : 선택된 전체 내역 */}
+          <div className="flex flex-col border rounded-xl bg-gray-50/60">
+            <div className="px-3 py-2 border-b flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-800">
+                선택된 파렛트 전체 내역
+              </p>
+              <p className="text-[11px] text-gray-500">
+                파렛트 {selectedPallets.length}개 · 총{" "}
+                <span className="font-semibold text-gray-800">
+                  {totalBox.toLocaleString()}
+                </span>{" "}
+                BOX /{" "}
+                <span className="font-semibold text-gray-800">
+                  {totalEa.toLocaleString()}
+                </span>{" "}
+                EA
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-auto px-3 py-2">
+              <table className="w-full text-[11px]">
+                <thead className="sticky top-0 bg-gray-50 border-b">
+                  <tr>
+                    <th className="w-6 p-1 text-center">
+                      <input
+                        type="checkbox"
+                        checked={
+                          selectedPallets.length > 0 &&
+                          rightChecked.length ===
+                            selectedPallets.length
+                        }
+                        onChange={(e) =>
+                          setRightChecked(
+                            e.target.checked
+                              ? selectedPallets.map((p) => p.id)
+                              : [],
+                          )
+                        }
+                      />
+                    </th>
+                    <th className="p-1 text-left w-24">
+                      파렛트ID
+                    </th>
+                    <th className="p-1 text-left">파렛트 위치</th>
+                    <th className="p-1 text-left">상품명</th>
+                    <th className="p-1 text-right w-16">BOX</th>
+                    <th className="p-1 text-right w-20">
+                      낱개(EA)
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedPallets.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="p-3 text-center text-[11px] text-gray-400"
+                      >
+                        아직 선택된 파렛트가 없습니다. 좌측에서
+                        파렛트를 선택하여 추가해 주세요.
+                      </td>
+                    </tr>
+                  )}
+
+                  {selectedPallets.map((p) => (
+                    <tr
+                      key={p.id}
+                      className="border-b last:border-b-0 hover:bg-white"
+                    >
+                      <td className="p-1 text-center align-middle">
+                        <input
+                          type="checkbox"
+                          checked={rightChecked.includes(p.id)}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setRightChecked((prev) =>
+                              checked
+                                ? [...prev, p.id]
+                                : prev.filter(
+                                    (id) => id !== p.id,
+                                  ),
+                            );
+                          }}
+                        />
+                      </td>
+                      <td className="p-1 align-middle">{p.id}</td>
+                      <td className="p-1 align-middle">
+                        {p.location}
+                      </td>
+                      <td className="p-1 align-middle">
+                        {p.productName}
+                      </td>
+                      <td className="p-1 align-middle text-right">
+                        {p.boxQty.toLocaleString()}
+                      </td>
+                      <td className="p-1 align-middle text-right">
+                        {p.eaQty.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
-            {/* 하단 버튼 */}
-            <div className="mt-3 flex items-center justify-between">
-              <button
-                type="button"
-                className="px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 text-[11px] hover:bg-gray-200"
-                onClick={() => setSelectedPalletIds([])}
-              >
-                선택 해제
-              </button>
+            {/* 하단 요약 & 버튼 */}
+            <div className="px-3 py-2 border-t flex items-center justify-between text-[11px] text-gray-600">
+              <div>
+                <p>
+                  · 선택된 파렛트 {selectedPallets.length}개 기준,
+                  총{" "}
+                  <span className="font-semibold text-gray-800">
+                    {totalBox.toLocaleString()}
+                  </span>{" "}
+                  BOX /{" "}
+                  <span className="font-semibold text-gray-800">
+                    {totalEa.toLocaleString()}
+                  </span>{" "}
+                  EA 호출 예정입니다.
+                </p>
+                {productSummary.length > 0 ? (
+                  <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                    {productSummary.map((s) => (
+                      <li key={s.name}>
+                        {s.name}:{" "}
+                        {s.box.toLocaleString()} BOX /{" "}
+                        {s.ea.toLocaleString()} EA
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1">
+                    · 선택된 상품이 없습니다.
+                  </p>
+                )}
+              </div>
               <div className="flex gap-2">
                 <button
                   type="button"
-                  className="px-3 py-1.5 rounded-full bg-gray-900 text-white text-[11px] hover:bg-gray-800"
-                  onClick={handleCallClick}
+                  className="px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 text-xs hover:bg-gray-200"
+                  onClick={handleClose}
                 >
-                  {isEmergency ? "선택 파렛트 긴급 호출" : "선택 파렛트 호출"}
+                  취소
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-full bg-blue-600 text-white text-xs hover:bg-blue-700 disabled:bg-gray-300"
+                  disabled={selectedPallets.length === 0}
+                  onClick={handleConfirm}
+                >
+                  {mode === "emergency"
+                    ? "선택 파렛트 긴급 호출"
+                    : "선택 파렛트 호출"}
                 </button>
               </div>
             </div>

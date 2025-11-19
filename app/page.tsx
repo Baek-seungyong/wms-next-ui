@@ -98,7 +98,7 @@ const buildInitialItemsByOrder = (orders: Order[]): Record<string, OrderItem[]> 
   return map;
 };
 
-type RobotModalMode = "normal" | "emergency";
+type RobotModalMode = "manual" | "emergency";
 
 export default function Page() {
   const [orders, setOrders] = useState<Order[]>(baseOrders);
@@ -109,7 +109,8 @@ export default function Page() {
   const [activeOrderId, setActiveOrderId] = useState<string>(orders[0]?.id ?? "");
 
   const [robotModalOpen, setRobotModalOpen] = useState(false);
-  const [robotModalMode, setRobotModalMode] = useState<RobotModalMode>("normal");
+  const [robotModalMode, setRobotModalMode] =
+  useState<RobotModalMode>("manual");
   const [stockModalOpen, setStockModalOpen] = useState(false);
 
   const activeOrder = useMemo(
@@ -218,7 +219,7 @@ export default function Page() {
             <button
               type="button"
               className="text-xs px-3 py-1.5 rounded-full bg-gray-800 hover:bg-gray-700 text-white"
-              onClick={() => openRobotModal("normal")}
+              onClick={() => openRobotModal("manual")}
             >
               🤖 AMR 수동 호출
             </button>
