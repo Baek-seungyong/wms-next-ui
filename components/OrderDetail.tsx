@@ -3,16 +3,18 @@
 
 import { useMemo, useState } from "react";
 import type { ReactElement } from "react";
-import type { Order, OrderItem } from "./types";
+import type { Order, OrderItem, OrderStatus } from "./types";
 import { statusBadgeClass } from "./types";
 import { PalletDirectTransferModal } from "./PalletDirectTransferModal";
 
 type Props = {
   order: Order | null;
   items: OrderItem[];
-  onChangeStatus?: (orderId: string, itemCode: string, nextStatus: string) => void;
-  onComplete?: (orderId: string) => void;
+  onChangeStatus?: (status: OrderStatus) => void;
+  // 🔹 page.tsx의 handleCompleteOrder(newItems: OrderItem[]) 와 맞추기
+  onComplete?: (newItems: OrderItem[]) => void;
 };
+
 
 export function OrderDetail({
   order,
@@ -49,10 +51,11 @@ export function OrderDetail({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleClickComplete = () => {
-    if (onComplete) {
-      onComplete(order.id as unknown as string);
-    }
-  };
+  if (onComplete) {
+    onComplete(items); // 🔹 선택된 주문의 아이템 목록을 넘겨줌
+  }
+};
+
 
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
