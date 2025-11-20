@@ -1,15 +1,17 @@
 // components/OrderDetail.tsx
 "use client";
 
+import { useMemo, useState } from "react";
+import type { ReactElement } from "react";
 import type { Order, OrderItem } from "./types";
 import { statusBadgeClass } from "./types";
-import { useMemo } from "react";
+import { PalletDirectTransferModal } from "./PalletDirectTransferModal";
 
 type Props = {
-  order: Order;
+  order: Order | null;
   items: OrderItem[];
-  onChangeStatus?: (status: Order["status"]) => void;
-  onComplete?: (newItems: OrderItem[]) => void;
+  onChangeStatus?: (orderId: string, itemCode: string, nextStatus: string) => void;
+  onComplete?: (orderId: string) => void;
 };
 
 export function OrderDetail({
@@ -17,241 +19,244 @@ export function OrderDetail({
   items,
   onChangeStatus,
   onComplete,
-}: Props) {
-  const hasLowStock = useMemo(() => items.some((i) => i.lowStock), [items]);
+}: Props): ReactElement | null {
+  if (!order) {
+    return (
+      <div className="flex h-full items-center justify-center rounded-2xl border bg-white text-sm text-gray-500">
+        주문을 선택하면 상세 정보가 표시됩니다.
+      </div>
+    );
+  }
 
-  // ⭐ 긴급출고 판단 로직 (EMG-로 시작)
-  const isEmergency = !!order.isEmergency;
+  // 피킹창고 부족 여부
+  const hasLowStock = useMemo(
+    () => items.some((i) => (i as any).lowStock),
+    [items],
+  );
 
-const emergencyTitle =
-  items.length <= 1
-    ? items[0]?.name ?? ""
-    : `${items[0].name} 외`;
+  // 🔹 행별 AMR 출발 위치 (피킹 / 2-1 / 3-1 등) 저장
+  const [amrRouteMap, setAmrRouteMap] = useState<Record<string, string>>({});
 
-  // 수량 입력 Ref 처리 없이 간단하게 input 값을 읽도록 설계
-  const handleCompleteEmergency = () => {
-    if (!onComplete) return;
+  // 🔹 지정이송 모달 상태
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferTarget, setTransferTarget] = useState<{
+    code: string;
+    name: string;
+    route: string;
+  } | null>(null);
 
-    const updated = items.map((it) => {
-      const el = document.getElementById(`qty-${it.code}`) as HTMLInputElement;
-      return {
-        ...it,
-        orderQty: Number(el?.value ?? it.orderQty),
-      };
-    });
+  // 🔹 피킹에서 지정이송 시 메시지
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-    onComplete(updated);
+  const handleClickComplete = () => {
+    if (onComplete) {
+      onComplete(order.id as unknown as string);
+    }
   };
 
   return (
-    <div className="bg-white shadow-sm rounded-2xl border border-gray-200 h-full">
-      <div className="p-4 h-full flex flex-col gap-3">
-        {/* 상단 정보 */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold">주문 상세 및 출고 지시</h2>
+    <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
+      {/* 에러 안내 (피킹 선택 후 지정이송 시) */}
+      {errorMsg && (
+        <div className="mb-3 rounded-md border border-red-300 bg-red-100 px-3 py-2 text-[12px] text-red-700">
+          {errorMsg}
+          <button
+            type="button"
+            onClick={() => setErrorMsg(null)}
+            className="float-right text-[11px] text-red-700 underline"
+          >
+            닫기
+          </button>
+        </div>
+      )}
 
-            <div className="text-xs text-gray-600 space-y-0.5">
-              <p>
-                주문번호:{" "}
-                <span className="font-medium text-gray-900">{order.id}</span>
-              </p>
-              {isEmergency ? (
-                <>
-                  <p>
-                    상품명(긴급):{" "}
-                    <span className="font-medium text-gray-900">
-                      {emergencyTitle}
-                    </span>
-                  </p>
-                  <p>
-                    납기일: <span className="font-medium text-gray-900">긴급</span>
-                  </p>
-                </>
-              ) : (
-                <p>
-                  납기일:{" "}
-                  <span className="font-medium text-gray-900">{order.dueDate}</span>
-                </p>
-              )}
-              <p>
-                출고위치:{" "}
-                <span className="font-medium text-gray-900">
-                  2층 피킹라인 (고정)
-                </span>
-              </p>
-            </div>
+      {/* 헤더 정보 */}
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <div className="text-xs text-gray-500">주문 상세 및 출고 지시</div>
+          <div className="mt-0.5 text-[13px] font-semibold">
+            주문번호: {order.id}
           </div>
-
-          <div className="flex flex-col items-end gap-1 text-xs">
-            <div className="flex items-center gap-2">
-              <span
-                className={`px-2 py-0.5 rounded-full text-[11px] ${statusBadgeClass(
-                  order.status,
-                )}`}
-              >
-                상태: {order.status}
-              </span>
-
-              <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[11px]">
-                주문 기준 UI 예시
-              </span>
-            </div>
-
-            {!isEmergency && hasLowStock && (
-              <span className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[11px]">
-                ⚠ 피킹창고 재고 부족 상품 있음
-              </span>
-            )}
+          <div className="mt-0.5 text-[11px] text-gray-500">
+            납기일:{" "}
+            <span className="font-medium text-gray-700">
+              {(order as any).dueDate}
+            </span>
+          </div>
+          <div className="mt-0.5 text-[11px] text-gray-500">
+            출고위치:{" "}
+            <span className="font-medium text-gray-700">
+              {(order as any).shipLocation ?? "2층 피킹라인 (고정)"}
+            </span>
           </div>
         </div>
 
-        {/* 테이블 */}
-        <div className="border rounded-xl overflow-hidden text-xs flex-1">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="p-2 border-b w-32 text-left">상품코드</th>
-                <th className="p-2 border-b text-left">상품명</th>
-                <th className="p-2 border-b w-24 text-center">주문수량</th>
-
-                {/* ❌ 긴급출고에서는 재고·상태·AMR 출력 안 함 */}
-                {!isEmergency && (
-                  <>
-                    <th className="p-2 border-b w-28 text-center">
-                      피킹창고 재고
-                    </th>
-                    <th className="p-2 border-b w-28 text-center">상태</th>
-                    <th className="p-2 border-b w-32 text-center">AMR 호출</th>
-                  </>
-                )}
-
-                <th className="p-2 border-b w-48 text-center">메모</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {items.map((it) => {
-                const lack = it.stockQty < it.orderQty;
-
-                return (
-                  <tr key={it.code} className="hover:bg-gray-50">
-                    <td className="p-2 border-t">{it.code}</td>
-                    <td className="p-2 border-t">{it.name}</td>
-
-                    {/* 🔸 긴급출고: 수량 직접 입력 */}
-                    <td className="p-2 border-t text-center">
-                      {isEmergency ? (
-                        <input
-                          id={`qty-${it.code}`}
-                          type="number"
-                          min={0}
-                          defaultValue={it.orderQty}
-                          className="w-20 border border-gray-300 rounded px-1 py-0.5 text-xs text-right"
-                        />
-                      ) : (
-                        `${it.orderQty.toLocaleString()} EA`
-                      )}
-                    </td>
-
-                    {/* 일반 주문에서만 표시 */}
-                    {!isEmergency && (
-                      <>
-                        <td className="p-2 border-t text-center">
-                          {it.stockQty} EA
-                        </td>
-                        <td className="p-2 border-t text-center">
-                          {lack ? (
-                            <span className="px-2 py-0.5 bg-red-50 text-red-700 rounded-full text-[11px]">
-                              피킹창고 부족
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-[11px]">
-                              피킹창고 충분
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-2 border-t text-center">
-                          <div className="inline-flex items-center gap-1">
-                            <select className="border rounded px-2 py-0.5 text-[11px]">
-                              <option>피킹</option>
-                              <option>2-1</option>
-                              <option>3-1</option>
-                            </select>
-                            <button className="px-2 py-0.5 bg-gray-900 text-white rounded-full text-[11px]">
-                              호출
-                            </button>
-                          </div>
-                        </td>
-                      </>
-                    )}
-
-                    {/* 메모 */}
-                    <td className="p-2 border-t text-center text-[11px] text-gray-600">
-                      {isEmergency
-                        ? "긴급출고(수량 입력 후 출고완료)"
-                        : lack
-                        ? "AMR 수동 호출로 보충 필요"
-                        : "피킹창고 재고 내에서 출고 가능"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* 하단 안내 & 버튼 */}
-        <div className="flex items-center justify-between text-[11px] text-gray-600">
+        <div className="text-right text-[11px] text-gray-500">
           <div>
-            {!isEmergency ? (
-              <>
-                <p>· 이 화면은 피킹라인 작업자 기준 출고 UI 예시입니다.</p>
-                <p>
-                  · 피킹창고 부족 상품은 상단 AMR 수동 호출 버튼으로 보충합니다.
-                </p>
-              </>
-            ) : (
-              <>
-                <p>· 긴급출고는 한 품목의 출고 수량을 직접 입력 후 완료합니다.</p>
-              </>
-            )}
+            상태:{" "}
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] ${statusBadgeClass(
+                (order as any).status,
+              )}`}
+            >
+              {(order as any).statusLabel ?? (order as any).status}
+            </span>
           </div>
-
-          <div className="flex gap-2">
-            {/* ❗ 긴급출고일 때 비활성화 */}
-            <button
-              disabled={isEmergency}
-              className={`px-3 py-1.5 rounded-full text-xs ${
-                isEmergency
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-gray-100 hover:bg-gray-200 text-gray-800"
-              }`}
-            >
-              송장 출력 (예시)
-            </button>
-
-            <button
-              disabled={isEmergency}
-              className={`px-3 py-1.5 rounded-full text-xs ${
-                isEmergency
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-gray-100 hover:bg-gray-200 text-gray-800"
-              }`}
-            >
-              거래명세표 출력 (예시)
-            </button>
-
-            {/* 🔥 긴급출고일 때만 동작하는 출고완료 버튼 */}
-            <button
-              onClick={handleCompleteEmergency}
-              className="px-4 py-1.5 rounded-full bg-green-500 text-white text-xs"
-            >
-              출고 완료
-            </button>
-          </div>
+          {hasLowStock && (
+            <div className="mt-1 text-[11px] text-red-500">
+              ⚠ 피킹창고 재고 부족 상품 있음
+            </div>
+          )}
         </div>
       </div>
+
+      {/* 아이템 테이블 */}
+      <div className="flex-1 overflow-auto rounded-2xl border bg-gray-50">
+        <table className="min-w-full border-collapse text-[12px]">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="border-b px-3 py-2 text-left">상품코드</th>
+              <th className="border-b px-3 py-2 text-left">상품명</th>
+              <th className="border-b px-3 py-2 text-right">주문수량</th>
+              <th className="border-b px-3 py-2 text-right">피킹창고 재고</th>
+              <th className="border-b px-3 py-2 text-center">상태</th>
+              <th className="border-b px-3 py-2 text-center">AMR 호출</th>
+              <th className="border-b px-3 py-2 text-left">메모</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it) => {
+              const key = (it as any).code ?? (it as any).itemCode ?? "";
+              const routeValue = amrRouteMap[key] ?? "피킹";
+              const lowStock = (it as any).lowStock;
+              const pickingStock = (it as any).pickingStock ?? 0;
+              const qty = (it as any).qty ?? (it as any).orderQty ?? 0;
+              const memo = (it as any).memo ?? "";
+
+              return (
+                <tr key={key} className="bg-white">
+                  <td className="border-t px-3 py-2 font-mono text-[12px]">
+                    {key}
+                  </td>
+                  <td className="border-t px-3 py-2 text-[12px]">
+                    {(it as any).name}
+                  </td>
+                  <td className="border-t px-3 py-2 text-right">
+                    {qty} EA
+                  </td>
+                  <td className="border-t px-3 py-2 text-right">
+                    {pickingStock} EA
+                  </td>
+                  <td className="border-t px-3 py-2 text-center">
+                    {lowStock ? (
+                      <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[11px] text-red-600">
+                        피킹창고 부족
+                      </span>
+                    ) : (
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-600">
+                        피킹창고 충분
+                      </span>
+                    )}
+                  </td>
+
+                  {/* AMR 호출 / 지정이송 */}
+                  <td className="border-t px-3 py-2 text-center">
+                    <div className="inline-flex items-center gap-1">
+                      <select
+                        className="rounded border px-2 py-0.5 text-[11px]"
+                        value={routeValue}
+                        onChange={(e) =>
+                          setAmrRouteMap((prev) => ({
+                            ...prev,
+                            [key]: e.target.value,
+                          }))
+                        }
+                      >
+                        <option value="피킹">피킹</option>
+                        <option value="2-1">2-1</option>
+                        <option value="3-1">3-1</option>
+                      </select>
+
+                      {/* 기존 AMR 호출 버튼 (동작은 나중에 연결) */}
+                      <button
+                        type="button"
+                        className="rounded-full bg-gray-900 px-2 py-0.5 text-[11px] text-white"
+                      >
+                        호출
+                      </button>
+
+                      {/* 🔹 지정이송 버튼 */}
+                      <button
+                        type="button"
+                        className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-100"
+                        onClick={() => {
+                          if (routeValue === "피킹") {
+                            setErrorMsg(
+                              "피킹창고에서는 지정이송을 할 수 없습니다.",
+                            );
+                            return;
+                          }
+
+                          setTransferTarget({
+                            code: key,
+                            name: (it as any).name,
+                            route: routeValue,
+                          });
+                          setTransferOpen(true);
+                        }}
+                      >
+                        지정이송
+                      </button>
+                    </div>
+                  </td>
+
+                  <td className="border-t px-3 py-2 text-[11px] text-gray-600">
+                    {memo}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 하단 안내 + 버튼 */}
+      <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
+        <div className="space-y-1">
+          <p>· 이 화면은 피킹라인 작업자 기준 출고 UI 예시입니다.</p>
+          <p>· 피킹창고 부족 상품은 상단 AMR 수동 호출 버튼으로 보충합니다.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+          >
+            송장 출력 (예시)
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+          >
+            거래명세표 출력 (예시)
+          </button>
+          <button
+            type="button"
+            onClick={handleClickComplete}
+            className="rounded-full bg-emerald-600 px-4 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+          >
+            출고 완료
+          </button>
+        </div>
+      </div>
+
+      {/* 🔹 지정이송 모달 */}
+      <PalletDirectTransferModal
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        productCode={transferTarget?.code}
+        productName={transferTarget?.name}
+        fromLocation={transferTarget?.route}
+      />
     </div>
   );
 }
