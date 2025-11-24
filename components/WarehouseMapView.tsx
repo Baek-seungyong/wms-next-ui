@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type WheelEvent as ReactWheelEvent,
 } from "react";
 
 type ZoneId = "3F" | "2F" | "PICKING";
@@ -190,8 +189,7 @@ export function WarehouseMapView() {
   // ✅ 첫 화면에서 축소된 상태로 시작 (전체 도면이 화면에 들어오도록)
   const [zoom, setZoom] = useState(0.2);
 
-  // 스크롤 컨테이너(뷰포트) / 실제 도면 영역 ref
-  const viewportRef = useRef<HTMLDivElement | null>(null);
+  // 도면 영역 DOM 참조 (여기에 마우스가 올라가 있을 때만 휠 줌)
   const mapAreaRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -282,54 +280,37 @@ export function WarehouseMapView() {
   };
 
   // -----------------------------
-  // 🧲 마우스 포인터 기준 휠 줌 (3층에서만)
+  // 🔥 전역 wheel 리스너 (3층 도면 위에서만 줌 + 페이지 스크롤 완전 차단)
   // -----------------------------
-  const handleWheelZoom = (e: ReactWheelEvent<HTMLDivElement>) => {
-    if (activeZone !== "3F") {
-      // 2F / 피킹에서는 기본 스크롤 그대로 사용
-      return;
-    }
+  useEffect(() => {
+    const handler = (e: WheelEvent) => {
+      if (activeZone !== "3F") return;
+      const mapEl = mapAreaRef.current;
+      if (!mapEl) return;
 
-    const viewport = viewportRef.current;
-    if (!viewport) return;
+      // 휠 이벤트가 난 위치가 도면 영역 안이 아니면 무시
+      if (!mapEl.contains(e.target as Node)) return;
 
-    // 브라우저 기본 스크롤 막기
-    e.preventDefault();
-    e.stopPropagation();
+      // 여기서 브라우저 기본 스크롤을 완전히 막고 줌만 처리
+      e.preventDefault();
 
-    const rect = viewport.getBoundingClientRect();
+      const direction = e.deltaY > 0 ? -0.05 : 0.05; // 아래 = 축소, 위 = 확대
 
-    // 뷰포트 안에서의 마우스 위치 (보이는 영역 기준)
-    const offsetX = e.clientX - rect.left;
-    const offsetY = e.clientY - rect.top;
+      setZoom((prev) => {
+        let next = prev + direction;
+        if (next < 0.1) next = 0.1;
+        if (next > 2) next = 2;
+        return next;
+      });
+    };
 
-    const scrollLeft = viewport.scrollLeft;
-    const scrollTop = viewport.scrollTop;
+    // passive: false 로 등록해서 preventDefault가 확실히 먹도록
+    window.addEventListener("wheel", handler, { passive: false });
 
-    const currentZoom = zoom;
-    const delta = e.deltaY > 0 ? -0.05 : 0.05; // 아래 = 축소, 위 = 확대
-    let nextZoom = currentZoom + delta;
-    if (nextZoom < 0.1) nextZoom = 0.1;
-    if (nextZoom > 2) nextZoom = 2;
-    if (nextZoom === currentZoom) return;
-
-    // 마우스가 가리키는 "도면 좌표" (스케일 적용 전 기준 좌표)
-    const mouseContentX = (scrollLeft + offsetX) / currentZoom;
-    const mouseContentY = (scrollTop + offsetY) / currentZoom;
-
-    // 새 스케일에서 동일한 좌표가 같은 화면 위치에 오도록 스크롤 조정
-    const newScrollLeft = mouseContentX * nextZoom - offsetX;
-    const newScrollTop = mouseContentY * nextZoom - offsetY;
-
-    setZoom(nextZoom);
-
-    // 렌더 후 스크롤 위치 적용
-    window.requestAnimationFrame(() => {
-      if (!viewportRef.current) return;
-      viewportRef.current.scrollLeft = newScrollLeft;
-      viewportRef.current.scrollTop = newScrollTop;
-    });
-  };
+    return () => {
+      window.removeEventListener("wheel", handler);
+    };
+  }, [activeZone]);
 
   // -----------------------------
   // 렉 한 칸 (2F / PICKING 용)
@@ -412,8 +393,9 @@ export function WarehouseMapView() {
     cells.filter((c) => c.line === line).sort((a, b) => a.col - b.col);
 
   const mapContainerClass =
-    "flex-1 rounded-xl bg-slate-100 overflow-auto" +
-    (activeZone === "3F" ? " overscroll-contain" : "");
+    activeZone === "3F"
+      ? "flex-1 rounded-xl bg-slate-100 overflow-hidden"
+      : "flex-1 rounded-xl bg-slate-100 overflow-auto";
 
   // -----------------------------
   // 렌더링
@@ -650,11 +632,7 @@ export function WarehouseMapView() {
           </button>
         </div>
 
-        <div
-          ref={viewportRef}
-          className={mapContainerClass}
-          onWheel={handleWheelZoom}
-        >
+        <div className={mapContainerClass}>
           <div
             ref={mapAreaRef}
             className="relative m-4 inline-block origin-top-left"
