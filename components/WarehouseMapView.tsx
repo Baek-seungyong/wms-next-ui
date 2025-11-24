@@ -1,22 +1,28 @@
 // components/WarehouseMapView.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type WheelEvent as ReactWheelEvent,
+} from "react";
 
 type ZoneId = "3F" | "2F" | "PICKING";
-type RackType = "single" | "double"; // 단층 / 복층
+type RackType = "single" | "double";
 
 interface RackCell {
   id: string;
   zone: ZoneId;
-  line: number; // 세로 줄(0부터 시작)
-  col: number; // 가로 칸(0부터 시작)
+  line: number;
+  col: number;
   type: RackType;
-  levels: number; // 표시되는 층 수 (3F/2F: 2, PICKING: 6)
-  occupiedLevels: number[]; // 재고가 있는 층 번호(1부터 시작)
+  levels: number;
+  occupiedLevels: number[];
+  isStorage: boolean;
 }
 
-// 선택된 위치의 재고/LOT 정보
 interface CellInventoryRow {
   level: number;
   productCode: string;
@@ -25,7 +31,6 @@ interface CellInventoryRow {
   qty: number;
 }
 
-// 검색용 더미 상품 리스트
 interface ProductInfo {
   code: string;
   name: string;
@@ -37,13 +42,15 @@ const MOCK_PRODUCTS: ProductInfo[] = [
   { code: "P-2001", name: "PET 1L 투명" },
 ];
 
-// 기본 랙 격자 크기
-const RACK_LINES = 8;
-const RACK_COLS = 10;
+const ZONE_LAYOUT: Record<ZoneId, { lines: number; cols: number }> = {
+  "3F": { lines: 7, cols: 18 },
+  "2F": { lines: 8, cols: 10 },
+  PICKING: { lines: 8, cols: 10 },
+};
 
-// ------------------------------------------------------------------
-// 더미 데이터 생성
-// ------------------------------------------------------------------
+// -----------------------------
+// 더미 데이터
+// -----------------------------
 function createRandomRackMap(): Record<ZoneId, RackCell[]> {
   const result: Record<ZoneId, RackCell[]> = {
     "3F": [],
@@ -53,39 +60,42 @@ function createRandomRackMap(): Record<ZoneId, RackCell[]> {
 
   (["3F", "2F", "PICKING"] as ZoneId[]).forEach((zone) => {
     const cells: RackCell[] = [];
+    const { lines, cols } = ZONE_LAYOUT[zone];
 
-    for (let line = 0; line < RACK_LINES; line += 1) {
-      for (let col = 0; col < RACK_COLS; col += 1) {
+    for (let line = 0; line < lines; line += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        let isStorage = true;
+        if (zone === "3F" && col >= 13 && line >= lines - 3) {
+          isStorage = false; // 3층 오른쪽 아래 사용 안 하는 구역
+        }
+
+        const isPickingZone = zone === "PICKING";
         const type: RackType =
-          zone === "PICKING" || (col !== 0 && col !== RACK_COLS - 1)
+          isPickingZone || (col !== 0 && col !== cols - 1)
             ? "double"
             : "single";
-
-        const levels = zone === "PICKING" ? 6 : 2;
-
+        const levels = isPickingZone ? 6 : 2;
         const occupiedLevels: number[] = [];
 
-        if (zone === "PICKING") {
-          // 피킹창고(6층) : 랜덤으로 몇 층만 채움
-          for (let lv = 1; lv <= 6; lv += 1) {
-            if (Math.random() < 0.5) occupiedLevels.push(lv);
-          }
-        } else {
-          // 2층 / 3층 파렛트창고
-          if (type === "single") {
-            // 단층 렉: 1층만 사용
-            if (Math.random() < 0.7) occupiedLevels.push(1);
+        if (isStorage) {
+          if (zone === "PICKING") {
+            for (let lv = 1; lv <= 6; lv += 1) {
+              if (Math.random() < 0.5) occupiedLevels.push(lv);
+            }
           } else {
-            // 복층 렉: 0~2층 랜덤
-            const r = Math.random();
-            if (r < 0.3) {
-              // 빈 렉
-            } else if (r < 0.6) {
-              occupiedLevels.push(1);
-            } else if (r < 0.9) {
-              occupiedLevels.push(2);
+            if (type === "single") {
+              if (Math.random() < 0.7) occupiedLevels.push(1);
             } else {
-              occupiedLevels.push(1, 2);
+              const r = Math.random();
+              if (r < 0.3) {
+                // 비움
+              } else if (r < 0.6) {
+                occupiedLevels.push(1);
+              } else if (r < 0.9) {
+                occupiedLevels.push(2);
+              } else {
+                occupiedLevels.push(1, 2);
+              }
             }
           }
         }
@@ -98,6 +108,7 @@ function createRandomRackMap(): Record<ZoneId, RackCell[]> {
           type,
           levels,
           occupiedLevels,
+          isStorage,
         });
       }
     }
@@ -108,23 +119,16 @@ function createRandomRackMap(): Record<ZoneId, RackCell[]> {
   return result;
 }
 
-// 특정 상품이 어떤 셀에 있다고 가정할지(데모용 규칙)
 function cellHasProduct(productCode: string, cell: RackCell): boolean {
+  if (!cell.isStorage) return false;
   const key = cell.line + cell.col;
 
-  if (productCode === "P-1001") {
-    return key % 3 === 0;
-  }
-  if (productCode === "P-1002") {
-    return key % 3 === 1;
-  }
-  if (productCode === "P-2001") {
-    return key % 4 === 0;
-  }
+  if (productCode === "P-1001") return key % 3 === 0;
+  if (productCode === "P-1002") return key % 3 === 1;
+  if (productCode === "P-2001") return key % 4 === 0;
   return false;
 }
 
-// 선택된 셀에 대한 가짜 재고 데이터 생성
 function buildFakeInventory(
   cell: RackCell,
   product: ProductInfo | null,
@@ -134,7 +138,6 @@ function buildFakeInventory(
     cell.zone === "PICKING" ? 6 : cell.type === "single" ? 1 : 2;
 
   const rows: CellInventoryRow[] = [];
-
   for (let lv = 1; lv <= maxLevels; lv += 1) {
     rows.push({
       level: lv,
@@ -148,7 +151,6 @@ function buildFakeInventory(
       qty: 1200 - (lv - 1) * 100,
     });
   }
-
   return rows;
 }
 
@@ -159,12 +161,15 @@ function zoneLabel(zone: ZoneId): string {
 }
 
 function formatCellLocation(cell: RackCell): string {
-  return `${cell.zone} / R${cell.line + 1} - C${cell.col + 1}`;
+  const { lines } = ZONE_LAYOUT[cell.zone];
+  const yLabel = lines - cell.line; // line 0 → Y7, 6 → Y1
+  const xLabel = cell.col + 1; // col 0 → X1
+  return `${cell.zone} / X${xLabel} - Y${yLabel}`;
 }
 
-// ------------------------------------------------------------------
+// -----------------------------
 // 메인 컴포넌트
-// ------------------------------------------------------------------
+// -----------------------------
 export function WarehouseMapView() {
   const [activeZone, setActiveZone] = useState<ZoneId>("3F");
   const [rackMap, setRackMap] = useState<Record<ZoneId, RackCell[]>>({
@@ -173,32 +178,36 @@ export function WarehouseMapView() {
     PICKING: [],
   });
 
-  // 검색 관련 상태
   const [searchText, setSearchText] = useState("");
   const [activeProduct, setActiveProduct] = useState<ProductInfo | null>(null);
   const [highlightedCellIds, setHighlightedCellIds] = useState<string[]>([]);
-
-  // 선택된 위치 / 재고
   const [selectedCell, setSelectedCell] = useState<RackCell | null>(null);
   const [selectedInventory, setSelectedInventory] = useState<
     CellInventoryRow[]
   >([]);
+
+  // ✅ 첫 화면에서 축소된 상태로 시작 (전체 도면이 화면에 들어오도록)
+  const [zoom, setZoom] = useState(0.2);
+
+  // 도면 영역 DOM 참조 (여기에 마우스가 올라가 있을 때만 휠 줌)
+  const mapAreaRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const data = createRandomRackMap();
     setRackMap(data);
   }, []);
 
-  // 존 변경 시 검색 하이라이트는 초기화
   useEffect(() => {
     setHighlightedCellIds([]);
+    setSelectedCell(null);
+    setSelectedInventory([]);
   }, [activeZone]);
 
   const cells = rackMap[activeZone] ?? [];
   const isPickingZone = activeZone === "PICKING";
   const isSearchMode = highlightedCellIds.length > 0;
+  const { lines: zoneLines } = ZONE_LAYOUT[activeZone];
 
-  // 검색어 입력 시 자동 완성 리스트
   const suggestions = useMemo(() => {
     const q = searchText.trim();
     if (!q) return [];
@@ -252,9 +261,7 @@ export function WarehouseMapView() {
   };
 
   const handleClickCell = (cell: RackCell) => {
-    // 검색 중일 때는 검색 결과(노란칸)만 클릭 가능하게 하려면 아래 조건 해제
-    // if (isSearchMode && !highlightedCellIds.includes(cell.id)) return;
-
+    if (!cell.isStorage) return;
     setSelectedCell(cell);
     const inventory = buildFakeInventory(cell, activeProduct);
     setSelectedInventory(inventory);
@@ -272,13 +279,57 @@ export function WarehouseMapView() {
     );
   };
 
-  // ----------------------------------------------------------------
-  // 개별 랙(큰 네모 한 칸) 렌더링
-  // ----------------------------------------------------------------
+  // -----------------------------
+  // 🔥 전역 wheel 리스너 (3층 도면 위에서만 줌 + 페이지 스크롤 완전 차단)
+  // -----------------------------
+  useEffect(() => {
+    const handler = (e: WheelEvent) => {
+      if (activeZone !== "3F") return;
+      const mapEl = mapAreaRef.current;
+      if (!mapEl) return;
+
+      // 휠 이벤트가 난 위치가 도면 영역 안이 아니면 무시
+      if (!mapEl.contains(e.target as Node)) return;
+
+      // 여기서 브라우저 기본 스크롤을 완전히 막고 줌만 처리
+      e.preventDefault();
+
+      const direction = e.deltaY > 0 ? -0.05 : 0.05; // 아래 = 축소, 위 = 확대
+
+      setZoom((prev) => {
+        let next = prev + direction;
+        if (next < 0.1) next = 0.1;
+        if (next > 2) next = 2;
+        return next;
+      });
+    };
+
+    // passive: false 로 등록해서 preventDefault가 확실히 먹도록
+    window.addEventListener("wheel", handler, { passive: false });
+
+    return () => {
+      window.removeEventListener("wheel", handler);
+    };
+  }, [activeZone]);
+
+  // -----------------------------
+  // 렉 한 칸 (2F / PICKING 용)
+  // -----------------------------
   const renderRackCell = (cell: RackCell) => {
+    if (!cell.isStorage) {
+      return (
+        <div
+          key={cell.id}
+          className="h-8 w-8 flex-none rounded-[4px] border-2 border-dashed border-slate-300 bg-slate-200/60"
+          title="창고로 사용하지 않는 영역"
+        />
+      );
+    }
+
+    const isMatch = highlightedCellIds.includes(cell.id);
+    const is3F = cell.zone === "3F";
     const isPickingCell = cell.zone === "PICKING";
 
-    // 테두리 색(단층 = 파란색, 복층 = 진한 검정, 피킹 = 진한 검정)
     let borderClass = "border-gray-400";
     if (isPickingCell || cell.type === "double") {
       borderClass = "border-gray-950";
@@ -286,20 +337,29 @@ export function WarehouseMapView() {
       borderClass = "border-blue-700";
     }
 
-    const isMatch = highlightedCellIds.includes(cell.id);
+    if (is3F) {
+      // 3F는 지금 도면 이미지만 사용하니까 여기서는 단순 버튼
+      return (
+        <button
+          type="button"
+          key={cell.id}
+          onClick={() => handleClickCell(cell)}
+          className={`h-8 w-8 flex-none rounded-[4px] border-2 ${borderClass} ${
+            isMatch ? "ring-2 ring-amber-300" : ""
+          }`}
+          title={formatCellLocation(cell)}
+        />
+      );
+    }
 
-    // 층(칸)별 배경색
     const levelSquares = [];
-    const totalLevels = cell.levels; // 2 또는 6
-
+    const totalLevels = cell.levels;
     for (let lv = 1; lv <= totalLevels; lv += 1) {
       let bgClass = "bg-white";
 
       if (isSearchMode) {
-        // 검색 모드일 때: 매칭된 셀은 노란색, 나머지는 전부 흰색
         bgClass = isMatch ? "bg-amber-300" : "bg-white";
       } else {
-        // 기본 모드: 재고 있는 층만 하늘색
         const filled = cell.occupiedLevels.includes(lv);
         bgClass = filled ? "bg-sky-300" : "bg-white";
       }
@@ -309,24 +369,20 @@ export function WarehouseMapView() {
       );
     }
 
-    const gridClass = isPickingCell
-      ? "grid grid-cols-2 grid-rows-3"
-      : "grid grid-cols-1 grid-rows-2";
-
-    const titleParts: string[] = [];
-    titleParts.push(zoneLabel(cell.zone));
-    titleParts.push(cell.type === "single" ? "단층 렉" : "복층 렉");
-    titleParts.push(`위치: ${formatCellLocation(cell)}`);
+    const gridClass =
+      cell.zone === "PICKING"
+        ? "grid grid-cols-2 grid-rows-3"
+        : "grid grid-cols-1 grid-rows-2";
 
     return (
       <button
         type="button"
         key={cell.id}
         onClick={() => handleClickCell(cell)}
-        className={`flex-1 aspect-square min-w-[28px] max-w-[80px] rounded-[4px] border-2 ${borderClass} ${
+        className={`h-8 w-8 flex-none rounded-[4px] border-2 ${borderClass} ${
           isMatch ? "ring-2 ring-amber-300" : ""
         }`}
-        title={titleParts.join(" / ")}
+        title={formatCellLocation(cell)}
       >
         <div className={`${gridClass} h-full w-full`}>{levelSquares}</div>
       </button>
@@ -336,105 +392,18 @@ export function WarehouseMapView() {
   const getLineCells = (line: number) =>
     cells.filter((c) => c.line === line).sort((a, b) => a.col - b.col);
 
+  const mapContainerClass =
+    activeZone === "3F"
+      ? "flex-1 rounded-xl bg-slate-100 overflow-hidden"
+      : "flex-1 rounded-xl bg-slate-100 overflow-auto";
+
+  // -----------------------------
+  // 렌더링
+  // -----------------------------
   return (
     <div className="flex w-full min-h-screen flex-col gap-4 lg:flex-row">
-      {/* 왼쪽: 창고 도면 카드 */}
-      <div className="flex flex-1 flex-col rounded-2xl border bg-white p-4">
-        {/* 헤더 */}
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <div className="text-sm font-semibold">창고 도면</div>
-            <div className="text-[11px] text-gray-500">
-              위에서 바라본 창고 평면도입니다. 각 칸(층)에 하늘색으로 적재
-              상태가 표시됩니다.
-            </div>
-          </div>
-        </div>
-
-        {/* 존 선택 버튼 */}
-        <div className="mt-2 mb-3 flex gap-2 text-[11px]">
-          <button
-            type="button"
-            onClick={() => setActiveZone("3F")}
-            className={`rounded-full px-3 py-1 ${
-              activeZone === "3F"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            3층 풀파렛트 창고
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveZone("2F")}
-            className={`rounded-full px-3 py-1 ${
-              activeZone === "2F"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            2층 잔량 파렛트 창고
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveZone("PICKING")}
-            className={`rounded-full px-3 py-1 ${
-              activeZone === "PICKING"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            2층 피킹창고
-          </button>
-        </div>
-
-        {/* 도면 영역 */}
-        <div className="flex-1 rounded-2xl bg-slate-50 p-4">
-          <div className="flex h-full flex-col justify-center space-y-4 rounded-xl bg-slate-100 px-4 py-4">
-            {/* 0: 위쪽 1줄 */}
-            <div className="flex w-full gap-1">
-              {getLineCells(0).map(renderRackCell)}
-            </div>
-
-            {/* 1~2, 3~4, 5~6 : 각 2줄짜리 렉 */}
-            <div className="space-y-1">
-              <div className="flex w-full gap-1">
-                {getLineCells(1).map(renderRackCell)}
-              </div>
-              <div className="flex w-full gap-1">
-                {getLineCells(2).map(renderRackCell)}
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex w-full gap-1">
-                {getLineCells(3).map(renderRackCell)}
-              </div>
-              <div className="flex w-full gap-1">
-                {getLineCells(4).map(renderRackCell)}
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex w-full gap-1">
-                {getLineCells(5).map(renderRackCell)}
-              </div>
-              <div className="flex w-full gap-1">
-                {getLineCells(6).map(renderRackCell)}
-              </div>
-            </div>
-
-            {/* 7: 맨 아래 1줄 */}
-            <div className="flex w-full gap-1">
-              {getLineCells(7).map(renderRackCell)}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 오른쪽: 검색 + 위치/재고 정보 패널 */}
+      {/* 왼쪽 패널 */}
       <div className="w-[420px] rounded-2xl border bg-white p-4 text-[12px]">
-        {/* 상품 검색 */}
         <div className="mb-3 rounded-xl border bg-gray-50 p-3">
           <div className="mb-1 text-sm font-semibold">상품 검색</div>
           <div className="mb-1 text-[11px] text-gray-500">
@@ -447,7 +416,7 @@ export function WarehouseMapView() {
               type="text"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              onKeyDown={(e) => {
+              onKeyDown={(e: ReactKeyboardEvent<HTMLInputElement>) => {
                 if (e.key === "Enter") handleSearch();
               }}
               className="h-8 flex-1 rounded border px-2 text-[11px]"
@@ -462,7 +431,6 @@ export function WarehouseMapView() {
             </button>
           </div>
 
-          {/* 자동완성 리스트 */}
           {suggestions.length > 0 && (
             <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px]">
               {suggestions.map((p) => (
@@ -504,7 +472,6 @@ export function WarehouseMapView() {
             표시됩니다.
           </div>
 
-          {/* 선택 위치 표시 */}
           <div className="mb-2 rounded border bg-white px-2 py-1">
             {selectedCell ? (
               <>
@@ -516,8 +483,8 @@ export function WarehouseMapView() {
                 {selectedCell.type === "single"
                   ? "단층 렉"
                   : isPickingZone
-                    ? "피킹랙(6층)"
-                    : "복층 렉"}
+                  ? "피킹랙(6층)"
+                  : "복층 렉"}
                 )
               </>
             ) : (
@@ -525,7 +492,6 @@ export function WarehouseMapView() {
             )}
           </div>
 
-          {/* ① 위치별 요약 */}
           <div className="mb-2 rounded border bg-white p-2">
             <div className="mb-1 font-semibold text-gray-700">
               ① 위치별 요약
@@ -569,7 +535,6 @@ export function WarehouseMapView() {
             </table>
           </div>
 
-          {/* ② 선택 제품 상세 */}
           <div className="flex flex-1 flex-col justify-between rounded border bg-white p-2">
             <div>
               <div className="mb-1 font-semibold text-gray-700">
@@ -606,7 +571,6 @@ export function WarehouseMapView() {
               )}
             </div>
 
-            {/* 호출하기 버튼 */}
             <div className="mt-3 flex justify-end">
               <button
                 type="button"
@@ -616,6 +580,94 @@ export function WarehouseMapView() {
                 호출하기
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 오른쪽: 창고 도면 */}
+      <div className="flex flex-1 flex-col rounded-2xl border bg-white p-4">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <div className="text-sm font-semibold">창고 도면</div>
+            <div className="text-[11px] text-gray-500">
+              위에서 바라본 창고 평면도입니다. 3층은 CAD 도면 이미지를 직접
+              사용합니다.
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2 mb-3 flex flex-wrap gap-2 text-[11px]">
+          <button
+            type="button"
+            onClick={() => setActiveZone("3F")}
+            className={`rounded-full px-3 py-1 ${
+              activeZone === "3F"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
+          >
+            3층 풀파렛트 창고
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveZone("2F")}
+            className={`rounded-full px-3 py-1 ${
+              activeZone === "2F"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
+          >
+            2층 잔량 파렛트 창고
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveZone("PICKING")}
+            className={`rounded-full px-3 py-1 ${
+              activeZone === "PICKING"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
+          >
+            2층 피킹창고
+          </button>
+        </div>
+
+        <div className={mapContainerClass}>
+          <div
+            ref={mapAreaRef}
+            className="relative m-4 inline-block origin-top-left"
+            style={{ transform: `scale(${zoom})` }}
+          >
+            {activeZone === "3F" ? (
+              <div className="relative inline-block">
+                <img
+                  src="/maps/3f-warehouse.png"
+                  alt="3층 창고 도면"
+                  className="block max-w-none"
+                />
+
+                {/* 나중에 필요하면 여기 오버레이 추가 */}
+                <div className="pointer-events-none absolute inset-0">
+                  <div className="grid h-full w-full grid-rows-7 grid-cols-18">
+                    {Array.from({ length: zoneLines }, (_, line) => (
+                      <div key={line} className="contents">
+                        {getLineCells(line).map((cell) => (
+                          <div key={cell.id} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="relative flex flex-col">
+                {Array.from({ length: zoneLines }, (_, line) => (
+                  <div key={line} className="flex">
+                    {getLineCells(line).map(renderRackCell)}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
