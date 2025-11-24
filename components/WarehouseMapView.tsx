@@ -6,7 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type WheelEvent as ReactWheelEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
 type ZoneId = "3F" | "2F" | "PICKING";
