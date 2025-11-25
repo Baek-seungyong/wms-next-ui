@@ -22,11 +22,27 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
             {/* 상단 1차 메뉴 */}
             <nav className="navbar-menu">
-              <Link href="/order" className="navbar-link">
-                주문관리
-              </Link>
+              {/* ✅ 주문관리 + 드롭다운 (하위메뉴 2개) */}
+              <div className="navbar-link navbar-has-dropdown">
+                <span>주문관리</span>
 
-              {/* ✅ 재고관리 + 드롭다운 */}
+                <div className="navbar-dropdown">
+                  <Link
+                    href="/order?tab=order"
+                    className="navbar-dropdown-link"
+                  >
+                    <span>1. 주문관리</span>
+                  </Link>
+                  <Link
+                    href="/order?tab=picking"
+                    className="navbar-dropdown-link"
+                  >
+                    <span>2. Picking 작업 현황</span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* ✅ 재고관리 + 드롭다운 (기존 그대로) */}
               <div className="navbar-link navbar-has-dropdown">
                 <span>재고관리</span>
 
