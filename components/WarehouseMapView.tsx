@@ -186,11 +186,12 @@ export function WarehouseMapView() {
     CellInventoryRow[]
   >([]);
 
-  // ✅ 첫 화면에서 축소된 상태로 시작 (전체 도면이 화면에 들어오도록)
+  // ✅ 첫 화면 축소 상태 (전체 도면이 보이게)
   const [zoom, setZoom] = useState(0.2);
+  const zoomRef = useRef(zoom);
 
-  // 도면 영역 DOM 참조 (여기에 마우스가 올라가 있을 때만 휠 줌)
-  const mapAreaRef = useRef<HTMLDivElement | null>(null);
+  // 스크롤 컨테이너(뷰포트) ref
+  const viewportRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const data = createRandomRackMap();
@@ -202,6 +203,11 @@ export function WarehouseMapView() {
     setSelectedCell(null);
     setSelectedInventory([]);
   }, [activeZone]);
+
+  // zoom 상태를 ref에도 동기화 (전역 wheel 핸들러에서 최신 값 사용)
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
 
   const cells = rackMap[activeZone] ?? [];
   const isPickingZone = activeZone === "PICKING";
@@ -280,31 +286,61 @@ export function WarehouseMapView() {
   };
 
   // -----------------------------
-  // 🔥 전역 wheel 리스너 (3층 도면 위에서만 줌 + 페이지 스크롤 완전 차단)
+  // 🔥 전역 wheel 리스너
+  //  - activeZone === "3F" 이고
+  //  - 휠 이벤트가 도면 스크롤 컨테이너 안에서 발생했을 때만
+  //    → 브라우저 스크롤 막고, 마우스 기준으로 줌
   // -----------------------------
   useEffect(() => {
     const handler = (e: WheelEvent) => {
       if (activeZone !== "3F") return;
-      const mapEl = mapAreaRef.current;
-      if (!mapEl) return;
 
-      // 휠 이벤트가 난 위치가 도면 영역 안이 아니면 무시
-      if (!mapEl.contains(e.target as Node)) return;
+      const viewport = viewportRef.current;
+      if (!viewport) return;
 
-      // 여기서 브라우저 기본 스크롤을 완전히 막고 줌만 처리
+      // 휠 이벤트가 viewport 바깥에서 난 경우 무시
+      if (!viewport.contains(e.target as Node)) return;
+
+      // 브라우저 기본 스크롤 막기 (윈도우 같이 안 내려가게)
       e.preventDefault();
 
-      const direction = e.deltaY > 0 ? -0.05 : 0.05; // 아래 = 축소, 위 = 확대
+      const rect = viewport.getBoundingClientRect();
 
-      setZoom((prev) => {
-        let next = prev + direction;
-        if (next < 0.1) next = 0.1;
-        if (next > 2) next = 2;
-        return next;
+      // 뷰포트 안에서의 마우스 위치
+      const offsetX = e.clientX - rect.left;
+      const offsetY = e.clientY - rect.top;
+
+      const scrollLeft = viewport.scrollLeft;
+      const scrollTop = viewport.scrollTop;
+
+      const currentZoom = zoomRef.current;
+      const delta = e.deltaY > 0 ? -0.05 : 0.05; // 아래 = 축소, 위 = 확대
+      let nextZoom = currentZoom + delta;
+      if (nextZoom < 0.1) nextZoom = 0.1;
+      if (nextZoom > 2) nextZoom = 2;
+      if (nextZoom === currentZoom) return;
+
+      // 마우스가 가리키는 도면상의 좌표 (scale 적용 전 기준)
+      const mouseContentX = (scrollLeft + offsetX) / currentZoom;
+      const mouseContentY = (scrollTop + offsetY) / currentZoom;
+
+      // 새 줌에서 같은 지점을 같은 화면 위치에 보이게 스크롤 조정
+      const newScrollLeft = mouseContentX * nextZoom - offsetX;
+      const newScrollTop = mouseContentY * nextZoom - offsetY;
+
+      // 상태 업데이트
+      setZoom(nextZoom);
+      zoomRef.current = nextZoom;
+
+      // 렌더 이후에 스크롤 위치 반영
+      window.requestAnimationFrame(() => {
+        if (!viewportRef.current) return;
+        viewportRef.current.scrollLeft = newScrollLeft;
+        viewportRef.current.scrollTop = newScrollTop;
       });
     };
 
-    // passive: false 로 등록해서 preventDefault가 확실히 먹도록
+    // passive: false 필수
     window.addEventListener("wheel", handler, { passive: false });
 
     return () => {
@@ -393,9 +429,8 @@ export function WarehouseMapView() {
     cells.filter((c) => c.line === line).sort((a, b) => a.col - b.col);
 
   const mapContainerClass =
-    activeZone === "3F"
-      ? "flex-1 rounded-xl bg-slate-100 overflow-hidden"
-      : "flex-1 rounded-xl bg-slate-100 overflow-auto";
+    "flex-1 rounded-xl bg-slate-100 overflow-auto" +
+    (activeZone === "3F" ? " overscroll-contain" : "");
 
   // -----------------------------
   // 렌더링
@@ -632,9 +667,8 @@ export function WarehouseMapView() {
           </button>
         </div>
 
-        <div className={mapContainerClass}>
+        <div ref={viewportRef} className={mapContainerClass}>
           <div
-            ref={mapAreaRef}
             className="relative m-4 inline-block origin-top-left"
             style={{ transform: `scale(${zoom})` }}
           >
@@ -646,7 +680,7 @@ export function WarehouseMapView() {
                   className="block max-w-none"
                 />
 
-                {/* 나중에 필요하면 여기 오버레이 추가 */}
+                {/* 오버레이 (필요하면 나중에 렉/파렛트 표시 넣기) */}
                 <div className="pointer-events-none absolute inset-0">
                   <div className="grid h-full w-full grid-rows-7 grid-cols-18">
                     {Array.from({ length: zoneLines }, (_, line) => (

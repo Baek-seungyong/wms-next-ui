@@ -1,3 +1,4 @@
+// app/layout.tsx
 import "./../styles/globals.css";
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -14,19 +15,43 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <div className="layout-root">
           {/* ✅ 상단 네비게이션 바 */}
           <header className="top-navbar">
-            {/* 좌측 상단 타이틀 (클릭 시 메인 대시보드로 이동) */}
+            {/* 좌측 상단 타이틀 */}
             <Link href="/" className="navbar-title">
               WMS 대시보드
             </Link>
 
-            {/* 상단 메뉴 */}
+            {/* 상단 1차 메뉴 */}
             <nav className="navbar-menu">
               <Link href="/order" className="navbar-link">
                 주문관리
               </Link>
-              <Link href="/stock" className="navbar-link">
-                재고관리
-              </Link>
+
+              {/* ✅ 재고관리 + 드롭다운 */}
+              <div className="navbar-link navbar-has-dropdown">
+                <span>재고관리</span>
+
+                <div className="navbar-dropdown">
+                  <Link
+                    href="/stock?tab=map"
+                    className="navbar-dropdown-link"
+                  >
+                    <span>1. 창고도면 재고현황</span>
+                  </Link>
+                  <Link
+                    href="/stock?tab=io"
+                    className="navbar-dropdown-link"
+                  >
+                    <span>2. 창고별 입출고 관리</span>
+                  </Link>
+                  <Link
+                    href="/stock?tab=history"
+                    className="navbar-dropdown-link"
+                  >
+                    <span>3. 입출고 히스토리</span>
+                  </Link>
+                </div>
+              </div>
+
               <Link href="/production" className="navbar-link">
                 생산관리
               </Link>

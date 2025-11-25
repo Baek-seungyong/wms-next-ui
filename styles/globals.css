@@ -24,50 +24,101 @@ body {
   flex-direction: column;
 }
 
-/* -------------------------------------
-   상단 네비게이션 바 스타일
-------------------------------------- */
+/* ===== 상단 네비게이션 공통 ===== */
+
 .top-navbar {
-  height: 56px;
-  background-color: #222;
-  color: #fff;
   display: flex;
   align-items: center;
   padding: 0 24px;
-  box-sizing: border-box;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  height: 56px;
+  background: #111827; /* 진한 회색(거의 검정) */
+  color: #f9fafb;
 }
 
-/* 좌측 상단 Title */
+/* 왼쪽 타이틀 */
 .navbar-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
-  margin-right: 40px;
+  color: #f9fafb;
   text-decoration: none;
-  color: #ffffff;
-  white-space: nowrap;
 }
 
-/* 메뉴들 */
+/* 1차 메뉴 컨테이너 */
 .navbar-menu {
   display: flex;
-  gap: 20px;
+  align-items: stretch;
+  gap: 4px;
+  margin-left: 32px;
 }
 
-/* 메뉴 개별 링크 */
+/* 1차 메뉴 공통 버튼 */
 .navbar-link {
-  text-decoration: none;
-  color: #dddddd;
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  height: 56px;               /* 헤더 높이랑 동일하게 */
   font-size: 14px;
-  padding: 6px 10px;
-  border-radius: 4px;
-  white-space: nowrap;
+  color: #e5e7eb;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .navbar-link:hover {
-  background-color: #444;
+  background: #1f2933;
   color: #ffffff;
 }
+
+/* ===== 재고관리 드롭다운 ===== */
+
+.navbar-has-dropdown {
+  /* 부모가 기준이 되도록 */
+  position: relative;
+}
+
+/* 드롭다운 박스 */
+.navbar-dropdown {
+  position: absolute;
+  top: 100%;           /* 버튼 바로 아래 */
+  left: 0;
+  min-width: 220px;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.25);
+  padding: 6px 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition:
+    opacity 0.15s ease-out,
+    transform 0.15s ease-out;
+  z-index: 40;
+}
+
+/* hover 시 열기 */
+.navbar-has-dropdown:hover .navbar-dropdown {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* 드롭다운 한 줄 */
+.navbar-dropdown-link {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: #111827;
+  text-decoration: none;
+}
+
+.navbar-dropdown-link:hover {
+  background: #eff6ff;      /* 연한 파란색 */
+  color: #1d4ed8;
+}
+
 
 /* -------------------------------------
    본문 영역 스타일
