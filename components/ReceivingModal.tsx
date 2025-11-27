@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type ReceivingModalProps = {
   open: boolean;
@@ -14,6 +14,29 @@ type ReceivingItem = {
   qty: number;
 };
 
+type ProductMaster = {
+  code: string;
+  name: string;
+};
+
+/** 🔹 예시용 상품 마스터 (자동완성에 사용) */
+const PRODUCT_MASTER: ProductMaster[] = [
+  { code: "P-1001", name: "PET 500ml 투명" },
+  { code: "P-1002", name: "PET 300ml 밀키" },
+  { code: "P-2001", name: "PET 1L 투명" },
+  { code: "C-2001", name: "캡 28파이 화이트" },
+  { code: "L-5001", name: "라벨 500ml 화이트" },
+];
+
+/** 🔹 예시 파렛트 목록 */
+const PALLET_MASTER: { id: string; desc: string }[] = [
+  { id: "PLT-1001", desc: "3층 플랫파렛트 A-01" },
+  { id: "PLT-1002", desc: "3층 플랫파렛트 A-02" },
+  { id: "PLT-2001", desc: "2층 잔량파렛트 B-01" },
+  { id: "PLT-2002", desc: "2층 잔량파렛트 B-02" },
+  { id: "PLT-3001", desc: "1층 입고 대기존 P-01" },
+];
+
 export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
   const [palletQR, setPalletQR] = useState("");
   const [searchText, setSearchText] = useState("");
@@ -21,19 +44,108 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
   const [targetLocation, setTargetLocation] = useState<"피킹" | "2-1" | "3-1">(
     "피킹",
   );
+  const [selectedProduct, setSelectedProduct] = useState<ProductMaster | null>(
+    null,
+  );
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  /** 🔹 모달 닫힐 때 내부 상태 전체 초기화 */
+  useEffect(() => {
+    if (!open) {
+      setPalletQR("");
+      setSearchText("");
+      setItems([]);
+      setTargetLocation("피킹");
+      setSelectedProduct(null);
+      setShowSuggestions(false);
+    }
+  }, [open]);
+
+  /** 🔹 검색어 기준 상품 자동완성 리스트 */
+  const productSuggestions = useMemo(() => {
+    const q = searchText.trim();
+    if (!q) return [];
+    const upper = q.toUpperCase();
+    const lower = q.toLowerCase();
+
+    return PRODUCT_MASTER.filter(
+      (p) =>
+        p.code.toUpperCase().includes(upper) ||
+        p.name.toLowerCase().includes(lower),
+    );
+  }, [searchText]);
+
+  /** 🔹 파렛트 번호 자동완성 리스트 */
+  const palletSuggestions = useMemo(() => {
+    const q = palletQR.trim();
+    if (!q) return [];
+    const upper = q.toUpperCase();
+
+    return PALLET_MASTER.filter(
+      (p) =>
+        p.id.toUpperCase().includes(upper) ||
+        p.desc.toLowerCase().includes(q.toLowerCase()),
+    );
+  }, [palletQR]);
 
   if (!open) return null;
 
-  const handleAddItem = () => {
-    if (!searchText.trim()) return;
+  /** 🔹 입고 품목 목록에 한 줄 추가 */
+  const handleAddItem = (productFromSuggestion?: ProductMaster) => {
+    const trimmed = searchText.trim();
+
+    // 1) 자동완성에서 클릭한 상품이 넘어온 경우 최우선
+    let base:
+      | ProductMaster
+      | {
+          code: string;
+          name: string;
+        }
+      | null = null;
+
+    if (productFromSuggestion) {
+      base = productFromSuggestion;
+    } else if (selectedProduct) {
+      // 2) 선택된 상품이 있는 경우
+      base = selectedProduct;
+    } else if (trimmed) {
+      // 3) 입력값으로 마스터 검색
+      const t = trimmed.toLowerCase();
+      base =
+        PRODUCT_MASTER.find(
+          (p) =>
+            p.code.toLowerCase() === t ||
+            p.code.toLowerCase().startsWith(t) ||
+            p.name.toLowerCase().includes(t),
+        ) ?? {
+          code: trimmed,
+          name: trimmed,
+        };
+    }
+
+    if (!base) return; // 아무 정보도 없으면 추가 안 함
+
     const newItem: ReceivingItem = {
       id: Date.now(),
-      code: searchText.trim(),
-      name: searchText.trim(),
+      code: base.code,
+      name: base.name,
       qty: 0,
     };
+
     setItems((prev) => [...prev, newItem]);
+
+    // 입력창 정리
     setSearchText("");
+    setShowSuggestions(false);
+
+    // 선택된 상품 표시용은 항상 최신 상품으로 유지
+    if (productFromSuggestion) {
+      setSelectedProduct(productFromSuggestion);
+    } else {
+      setSelectedProduct(
+        "code" in base && "name" in base ? { code: base.code, name: base.name } : null,
+      );
+    }
   };
 
   const handleChangeQty = (id: number, value: string) => {
@@ -72,6 +184,9 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
     setItems([]);
     setPalletQR("");
     setTargetLocation("피킹");
+    setSelectedProduct(null);
+    setSearchText("");
+    setShowSuggestions(false);
     onClose();
   };
 
@@ -84,9 +199,6 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
             <h2 className="text-base font-semibold">
               재고 입고 · 파렛트 단위 입고 / 보충
             </h2>
-            <p className="text-xs text-gray-500">
-              생산/매입 입고 및 피킹/2-1 보충 입고를 수동으로 등록하는 화면입니다.
-            </p>
           </div>
           <button
             className="text-xs text-gray-500 hover:text-gray-800"
@@ -119,35 +231,83 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                   QR 스캔
                 </button>
               </div>
-              <p className="text-[11px] text-gray-500">
-                실제 현장에서는 QR 스캐너로 자동 입력되며, 지금은 예시로 번호를 직접 입력합니다.
-              </p>
-            </section>
 
+              {/* 🔽 파렛트 자동완성 리스트 */}
+              {palletSuggestions.length > 0 && (
+                <div className="mt-1 border rounded-md bg-white shadow p-2 max-h-40 overflow-auto text-xs">
+                  {palletSuggestions.map((p) => (
+                    <div
+                      key={p.id}
+                      onClick={() => setPalletQR(p.id)}
+                      className="px-2 py-1 hover:bg-gray-100 cursor-pointer"
+                    >
+                      <span className="font-mono font-semibold">{p.id}</span>
+                      <span className="ml-2 text-gray-600">{p.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
             {/* 상품 조회 / 추가 */}
             <section className="space-y-1.5">
               <h3 className="text-xs font-semibold text-gray-700">제품 조회</h3>
               <div className="flex gap-2">
                 <input
                   className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  placeholder="제품 코드 또는 이름 (예: PET 200 / 캡 / 라벨)"
+                  placeholder="제품 코드 또는 이름 (예: P-1001 / PET 500ml)"
                   value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setSearchText(v);
+                    setShowSuggestions(!!v);
+                  }}
                 />
                 <button
                   type="button"
                   className="px-3 py-2 rounded-md bg-gray-800 text-white text-xs"
-                  onClick={handleAddItem}
+                  onClick={() => handleAddItem()}
                 >
-                  조회/추가
+                  추가
                 </button>
               </div>
-              <p className="text-[11px] text-gray-500">
-                조회된 상품을 아래 리스트에 추가한 후, 입고 수량을 입력합니다. (데모에서는 입력값을 그대로
-                코드로 사용합니다)
-              </p>
-            </section>
 
+              {/* 자동완성 리스트 */}
+              {showSuggestions && productSuggestions.length > 0 && (
+                <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px] shadow-sm">
+                  {productSuggestions.map((p) => (
+                    <button
+                      key={p.code}
+                      type="button"
+                      onClick={() => handleAddItem(p)}
+                      className="flex w-full items-center justify-between px-2 py-1 text-left hover:bg-gray-100"
+                    >
+                      <span className="font-mono">{p.code}</span>
+                      <span className="ml-2 text-gray-500">{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 선택된 상품 표시 */}
+              <div className="mt-1 text-[11px] text-gray-600">
+                {selectedProduct ? (
+                  <>
+                    선택된 상품:&nbsp;
+                    <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 font-mono text-[11px] text-blue-700">
+                      {selectedProduct.code}
+                    </span>
+                    <span className="ml-1 text-gray-700">
+                      {selectedProduct.name}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-gray-400">
+                    선택된 상품이 없습니다. 위에서 상품을 선택하거나 추가해
+                    주세요.
+                  </span>
+                )}
+              </div>
+            </section>
             {/* 추가된 상품 목록 */}
             <section className="space-y-1.5 flex-1 min-h-[160px]">
               <h3 className="text-xs font-semibold text-gray-700">
@@ -159,7 +319,9 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                     <tr>
                       <th className="px-2 py-2 text-left w-28">상품코드</th>
                       <th className="px-2 py-2 text-left">상품명</th>
-                      <th className="px-2 py-2 text-center w-28">입고수량(EA)</th>
+                      <th className="px-2 py-2 text-center w-28">
+                        입고수량(EA)
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -181,7 +343,9 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                           <td className="px-2 py-2 font-medium text-gray-800">
                             {it.code}
                           </td>
-                          <td className="px-2 py-2 text-gray-700">{it.name}</td>
+                          <td className="px-2 py-2 text-gray-700">
+                            {it.name}
+                          </td>
                           <td className="px-2 py-1 text-center">
                             <input
                               className="w-20 rounded-md border border-gray-300 px-2 py-1 text-xs text-right"
@@ -202,7 +366,9 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
 
             {/* 위치 지정 */}
             <section className="space-y-1.5">
-              <h3 className="text-xs font-semibold text-gray-700">입고 위치</h3>
+              <h3 className="text-xs font-semibold text-gray-700">
+                입고 위치
+              </h3>
               <div className="flex gap-3 text-xs text-gray-800">
                 {(["피킹", "2-1", "3-1"] as const).map((loc) => (
                   <label key={loc} className="inline-flex items-center gap-1.5">
@@ -216,9 +382,6 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                   </label>
                 ))}
               </div>
-              <p className="text-[11px] text-gray-500">
-                예: 1-1 생산라인에서 나온 완료품을 피킹창고 또는 2-1, 3-1 창고로 입고 지시합니다.
-              </p>
             </section>
           </div>
 
@@ -230,15 +393,10 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
             <div className="flex-1 border rounded-lg bg-gray-50 px-3 py-2 overflow-auto text-[11px] text-gray-700 space-y-1">
               <p>
                 파렛트:{" "}
-                <span className="font-semibold">
-                  {palletQR || "미입력"}
-                </span>
+                <span className="font-semibold">{palletQR || "미입력"}</span>
               </p>
               <p>
-                위치:{" "}
-                <span className="font-semibold">
-                  {targetLocation}
-                </span>
+                위치: <span className="font-semibold">{targetLocation}</span>
               </p>
               <hr className="my-1" />
               <p className="font-semibold mb-1">입고 품목</p>
@@ -253,17 +411,12 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                 ))
               )}
             </div>
-            <p className="mt-2 text-[11px] text-gray-500">
-              이 화면은 재고 입고/보충 작업자를 위한 예시 UI입니다. 실제 적용 시에는 WMS/로봇 스케줄러와
-              연동됩니다.
-            </p>
           </div>
         </div>
 
         {/* 푸터 */}
         <div className="flex items-center justify-between px-5 py-3 border-t bg-gray-50">
           <p className="text-[11px] text-gray-500">
-            · 등록된 내역은 WMS 기준 재고에 반영되며, 필요 시 AMR 이송 지시까지 연동할 수 있습니다.
           </p>
           <div className="flex gap-2">
             <button

@@ -41,9 +41,6 @@ export default function StockPage({ searchParams }: StockPageProps) {
       <header className="rounded-2xl border bg-white px-6 py-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-lg font-semibold">재고관리</h1>
-          <p className="text-[12px] text-gray-500">
-            창고 도면 기반 재고 현황, 창고별 입출고, 입출고 히스토리를 조회하는 화면입니다.
-          </p>
         </div>
       </header>
 

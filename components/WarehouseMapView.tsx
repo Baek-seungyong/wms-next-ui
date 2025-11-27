@@ -182,16 +182,20 @@ export function WarehouseMapView() {
   const [activeProduct, setActiveProduct] = useState<ProductInfo | null>(null);
   const [highlightedCellIds, setHighlightedCellIds] = useState<string[]>([]);
   const [selectedCell, setSelectedCell] = useState<RackCell | null>(null);
-  const [selectedInventory, setSelectedInventory] = useState<
-    CellInventoryRow[]
-  >([]);
+  const [selectedInventory, setSelectedInventory] = useState<CellInventoryRow[]>([]);
 
-  // ✅ 첫 화면 축소 상태 (전체 도면이 보이게)
+  // 🔹 추천 리스트를 보여줄지 여부
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+
+  // ✅ 첫 화면 축소 상태 (3층은 CAD 이미지라 작게 시작)
   const [zoom, setZoom] = useState(0.2);
   const zoomRef = useRef(zoom);
 
   // 스크롤 컨테이너(뷰포트) ref
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  // ✅ 실제 도면 콘텐츠 래퍼 ref (auto-fit용)
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const data = createRandomRackMap();
@@ -225,11 +229,16 @@ export function WarehouseMapView() {
     );
   }, [searchText]);
 
-  const handleSearch = () => {
-    const keyword = searchText.trim();
+  const handleSearch = (keywordFromClick?: string) => {
+    const keyword = (keywordFromClick ?? searchText).trim();
+
+    // 입력값을 동기화
+    setSearchText(keyword);
+
     if (!keyword) {
       setActiveProduct(null);
       setHighlightedCellIds([]);
+      setShowSuggestions(false);
       return;
     }
 
@@ -245,6 +254,7 @@ export function WarehouseMapView() {
     if (!product) {
       setActiveProduct(null);
       setHighlightedCellIds([]);
+      setShowSuggestions(false);
       alert("해당 상품을 찾을 수 없습니다.");
       return;
     }
@@ -257,6 +267,7 @@ export function WarehouseMapView() {
 
     if (matchedIds.length === 0) {
       setHighlightedCellIds([]);
+      setShowSuggestions(false);
       alert("현재 존에서 해당 상품이 적재된 위치가 없습니다.");
       return;
     }
@@ -264,7 +275,9 @@ export function WarehouseMapView() {
     setHighlightedCellIds(matchedIds);
     setSelectedCell(null);
     setSelectedInventory([]);
+    setShowSuggestions(false);  // 🔹 검색이 끝나면 리스트 닫기
   };
+
 
   const handleClickCell = (cell: RackCell) => {
     if (!cell.isStorage) return;
@@ -286,10 +299,22 @@ export function WarehouseMapView() {
   };
 
   // -----------------------------
-  // 🔥 전역 wheel 리스너
-  //  - activeZone === "3F" 이고
-  //  - 휠 이벤트가 도면 스크롤 컨테이너 안에서 발생했을 때만
-  //    → 브라우저 스크롤 막고, 마우스 기준으로 줌
+  // ✅ 존 변경 시 줌 초기값 조정
+  //  - 3F: CAD 이미지라 기본 0.2 배
+  //  - 2F / PICKING: auto-fit 에서 다시 계산하므로 일단 1로
+  // -----------------------------
+  useEffect(() => {
+    if (activeZone === "3F") {
+      setZoom(0.2);
+      zoomRef.current = 0.2;
+    } else {
+      setZoom(1);
+      zoomRef.current = 1;
+    }
+  }, [activeZone]);
+
+  // -----------------------------
+  // 🔥 전역 wheel 리스너 (3F 전용)
   // -----------------------------
   useEffect(() => {
     const handler = (e: WheelEvent) => {
@@ -328,11 +353,9 @@ export function WarehouseMapView() {
       const newScrollLeft = mouseContentX * nextZoom - offsetX;
       const newScrollTop = mouseContentY * nextZoom - offsetY;
 
-      // 상태 업데이트
       setZoom(nextZoom);
       zoomRef.current = nextZoom;
 
-      // 렌더 이후에 스크롤 위치 반영
       window.requestAnimationFrame(() => {
         if (!viewportRef.current) return;
         viewportRef.current.scrollLeft = newScrollLeft;
@@ -340,13 +363,52 @@ export function WarehouseMapView() {
       });
     };
 
-    // passive: false 필수
     window.addEventListener("wheel", handler, { passive: false });
 
     return () => {
       window.removeEventListener("wheel", handler);
     };
   }, [activeZone]);
+
+  // -----------------------------
+  // ✅ 2F / PICKING 자동 확대 (창 크기에 맞추기)
+  //  - viewport / content 크기를 비교해서 zoom 계산
+  //  - 윈도우 리사이즈 / 존 변경 시 자동 반응
+  // -----------------------------
+  useEffect(() => {
+    if (activeZone === "3F") return; // 3층은 사용자가 수동 줌
+
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+    if (!viewport || !content) return;
+
+    const fitToViewport = () => {
+      const vw = viewport.clientWidth;
+      const vh = viewport.clientHeight;
+      const cw = content.offsetWidth;
+      const ch = content.offsetHeight;
+
+      if (!cw || !ch || !vw || !vh) return;
+
+      // 도면 전체가 보이도록 비율 계산 (조금 여유 0.9)
+      let next = Math.min(vw / cw, vh / ch) * 0.9;
+      if (next > 2) next = 2;
+      if (next < 0.2) next = 0.2;
+
+      setZoom(next);
+      zoomRef.current = next;
+    };
+
+    fitToViewport();
+
+    const ro = new ResizeObserver(fitToViewport);
+    ro.observe(viewport);
+    ro.observe(content);
+
+    return () => {
+      ro.disconnect();
+    };
+  }, [activeZone, cells.length]);
 
   // -----------------------------
   // 렉 한 칸 (2F / PICKING 용)
@@ -439,42 +501,49 @@ export function WarehouseMapView() {
     <div className="flex w-full min-h-screen flex-col gap-4 lg:flex-row">
       {/* 왼쪽 패널 */}
       <div className="w-[420px] rounded-2xl border bg-white p-4 text-[12px]">
+        {/* ───── 상품 검색 ───── */}
         <div className="mb-3 rounded-xl border bg-gray-50 p-3">
           <div className="mb-1 text-sm font-semibold">상품 검색</div>
-          <div className="mb-1 text-[11px] text-gray-500">
-            상품코드 또는 상품명을 입력하면 해당 상품이 적재된 위치를 노란색으로
-            표시합니다.
-          </div>
-
           <div className="flex gap-2">
             <input
               type="text"
               value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
+              onChange={(e) => {
+                setSearchText(e.target.value);
+                setShowSuggestions(true); // 🔹 입력하면 추천 리스트 열기
+              }}
               onKeyDown={(e: ReactKeyboardEvent<HTMLInputElement>) => {
-                if (e.key === "Enter") handleSearch();
+                if (e.key === "Enter") {
+                  handleSearch();
+                  setShowSuggestions(false); // 🔹 엔터 검색 후 닫기
+                }
               }}
               className="h-8 flex-1 rounded border px-2 text-[11px]"
               placeholder="예: P-1001, PET 500ml..."
             />
             <button
               type="button"
-              onClick={handleSearch}
+              onClick={() => {
+                handleSearch();
+                setShowSuggestions(false);   // 🔹 버튼 검색 후 닫기
+              }}
               className="h-8 rounded bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-700"
             >
               검색
             </button>
           </div>
 
-          {suggestions.length > 0 && (
+          {/* 🔹 추천 리스트: showSuggestions 가 true일 때만 렌더링 */}
+          {showSuggestions && suggestions.length > 0 && (
             <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px]">
               {suggestions.map((p) => (
                 <button
                   key={p.code}
                   type="button"
                   onClick={() => {
-                    setSearchText(p.code);
-                    setActiveProduct(p);
+                    // 클릭하면 그 상품으로 바로 검색 실행
+                    handleSearch(p.code);
+                    setShowSuggestions(false);   // 🔹 리스트 즉시 닫기
                   }}
                   className="flex w-full items-center justify-between px-2 py-1 text-left hover:bg-gray-100"
                 >
@@ -485,28 +554,31 @@ export function WarehouseMapView() {
             </div>
           )}
 
-          <div className="mt-1 text-[11px] text-gray-600">
-            현재 존: <span className="font-semibold">{zoneLabel(activeZone)}</span>
-            {activeProduct && (
-              <>
-                {" / 현재 검색 상품: "}
-                <span className="font-mono font-semibold">
-                  {activeProduct.code}
-                </span>{" "}
-                <span> / {activeProduct.name}</span>
-              </>
-            )}
+          {/* 현재 존 / 현재 검색 상품 표시 */}
+          <div className="mt-2 text-[11px] text-gray-600">
+            현재 존:&nbsp;
+            <span className="font-semibold">{zoneLabel(activeZone)}</span>
           </div>
+
+          {activeProduct ? (
+            <div className="mt-2 rounded-lg border border-blue-600 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-800 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="rounded-md bg-blue-700 px-2 py-0.5 font-mono text-[11px] text-white">
+                  {activeProduct.code}
+                </span>
+                <span className="text-[12px]">{activeProduct.name}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-1 text-[11px] text-gray-400">
+              현재 검색 중인 상품이 없습니다.
+            </div>
+          )}
         </div>
 
         {/* 위치 / 재고 정보 */}
         <div className="flex flex-1 flex-col rounded-xl border bg-gray-50 p-3 text-[11px] text-gray-700">
           <div className="mb-2 text-sm font-semibold">위치 / 재고 정보</div>
-          <div className="mb-2 text-[11px] text-gray-500">
-            도면에서 칸(렉/단)을 클릭하면 해당 위치의 층별 LOT/수량 정보가
-            표시됩니다.
-          </div>
-
           <div className="mb-2 rounded border bg-white px-2 py-1">
             {selectedCell ? (
               <>
@@ -624,10 +696,6 @@ export function WarehouseMapView() {
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <div className="text-sm font-semibold">창고 도면</div>
-            <div className="text-[11px] text-gray-500">
-              위에서 바라본 창고 평면도입니다. 3층은 CAD 도면 이미지를 직접
-              사용합니다.
-            </div>
           </div>
         </div>
 
@@ -669,6 +737,7 @@ export function WarehouseMapView() {
 
         <div ref={viewportRef} className={mapContainerClass}>
           <div
+            ref={contentRef} // ✅ auto-fit 대상
             className="relative m-4 inline-block origin-top-left"
             style={{ transform: `scale(${zoom})` }}
           >

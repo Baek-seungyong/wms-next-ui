@@ -163,6 +163,14 @@ const ALL_PALLETS: Pallet[] = [
   },
 ];
 
+// 🔹 파렛트에서 상품코드/상품명만 뽑아서 중복 제거한 상품 리스트
+const PRODUCT_MASTER: { code: string; name: string }[] = [];
+ALL_PALLETS.forEach((p) => {
+  if (!PRODUCT_MASTER.find((x) => x.code === p.productCode)) {
+    PRODUCT_MASTER.push({ code: p.productCode, name: p.productName });
+  }
+});
+
 export function RobotProductCallModal({
   open,
   onClose,
@@ -177,18 +185,40 @@ export function RobotProductCallModal({
   const [rightChecked, setRightChecked] = useState<string[]>([]);
   const [selectedPallets, setSelectedPallets] = useState<Pallet[]>([]);
 
+   // 🔹 자동 검색용
+  const [selectedProduct, setSelectedProduct] = useState<{
+    code: string;
+    name: string;
+  } | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   // ---------------------- memo values ----------------------
   // 검색 결과
   const searchResults = useMemo(() => {
-    if (!hasSearched || !searchTerm.trim()) return [];
-    const q = searchTerm.trim().toLowerCase();
+    const keyword = selectedProduct?.code ?? searchTerm;
+    if (!hasSearched || !keyword.trim()) return [];
+    const q = keyword.trim().toLowerCase();
 
     return ALL_PALLETS.filter(
       (p) =>
         p.productCode.toLowerCase().includes(q) ||
         p.productName.toLowerCase().includes(q),
     );
-  }, [searchTerm, hasSearched]);
+  }, [searchTerm, hasSearched, selectedProduct]);
+
+    // 자동완성용 상품 리스트 (위 검색창 아래에 뜨는 리스트)
+  const productSuggestions = useMemo(() => {
+    const q = searchTerm.trim();
+    if (!q) return [];
+    const upper = q.toUpperCase();
+    const lower = q.toLowerCase();
+
+    return PRODUCT_MASTER.filter(
+      (p) =>
+        p.code.toUpperCase().includes(upper) ||
+        p.name.toLowerCase().includes(lower),
+    );
+  }, [searchTerm]);
 
   // 우측 전체 내역 합계
   const totalBox = useMemo(
@@ -237,10 +267,27 @@ export function RobotProductCallModal({
     }
   }, [open]);
 
-  const onSearchClick = () => {
+    const onSearchClick = () => {
     setHasSearched(true);
     setLeftChecked([]);
+
+    if (searchTerm.trim()) {
+      const q = searchTerm.trim().toLowerCase();
+      const found =
+        PRODUCT_MASTER.find((p) =>
+          p.code.toLowerCase().startsWith(q),
+        ) ??
+        PRODUCT_MASTER.find((p) =>
+          p.name.toLowerCase().includes(q),
+        );
+
+      setSelectedProduct(found ?? null);
+    } else {
+      setSelectedProduct(null);
+    }
+    setShowSuggestions(false);
   };
+
 
   // ▶ 좌측(검색결과) → 우측(전체 내역) 이동
   const moveToRight = () => {
@@ -368,10 +415,6 @@ export function RobotProductCallModal({
                 </span>
               )}
             </h2>
-            <p className="mt-0.5 text-[11px] text-gray-500">
-              제품을 검색하여 해당 제품이 적재된 파렛트를 선택하고, 여러
-              파렛트를 한 번에 호출할 수 있습니다.
-            </p>
           </div>
           <button
             type="button"
@@ -403,7 +446,13 @@ export function RobotProductCallModal({
               <div className="flex items-center gap-2">
                 <input
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setSearchTerm(v);
+                    setHasSearched(false);
+                    setSelectedProduct(null);
+                    setShowSuggestions(!!v);
+                  }}
                   className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs"
                   placeholder="상품 코드 또는 상품명으로 검색 (예: P-001, PET 500ml)"
                 />
@@ -415,9 +464,48 @@ export function RobotProductCallModal({
                   검색
                 </button>
               </div>
-              <p className="mt-1 text-[11px] text-gray-400">
-                검색 후 해당 상품이 적재된 파렛트 목록이 아래에 표시됩니다.
-              </p>
+                            {/* 자동완성 리스트 */}
+              {showSuggestions && productSuggestions.length > 0 && (
+                <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px] shadow-sm">
+                  {productSuggestions.map((p) => (
+                    <button
+                      key={p.code}
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm(p.code);
+                        setSelectedProduct(p);
+                        setHasSearched(true);
+                        setLeftChecked([]);
+                        setShowSuggestions(false);
+                      }}
+                      className="flex w-full items-center justify-between px-2 py-1 text-left hover:bg-gray-100"
+                    >
+                      <span className="font-mono">{p.code}</span>
+                      <span className="ml-2 text-gray-500">{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 선택된 상품 표시 */}
+              <div className="mt-1 text-[11px] text-gray-600">
+                {selectedProduct ? (
+                  <>
+                    선택된 상품:&nbsp;
+                    <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 font-mono text-[11px] text-blue-700">
+                      {selectedProduct.code}
+                    </span>
+                    <span className="ml-1 text-gray-700">
+                      {selectedProduct.name}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-gray-400">
+                    선택된 상품이 없습니다. 위에서 상품을 선택해 주세요.
+                  </span>
+                )}
+              </div>
+
             </div>
 
             <div className="flex-1 overflow-auto px-3 py-2">
@@ -637,7 +725,7 @@ export function RobotProductCallModal({
                   <span className="font-semibold text-gray-800">
                     {totalEa.toLocaleString()}
                   </span>{" "}
-                  EA 호출 예정입니다.
+                  EA 호출 예정
                 </p>
 
                 {productSummary.length > 0 && (
@@ -652,8 +740,6 @@ export function RobotProductCallModal({
                     ))}
                   </p>
                 )}
-
-                <p>· 실제 WMS 연동 시 각 파렛트의 위치 정보와 함께 전송됩니다.</p>
               </div>
               <div className="flex gap-2">
                 <button

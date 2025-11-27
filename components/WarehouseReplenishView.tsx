@@ -485,10 +485,6 @@ export function WarehouseReplenishView() {
               <div className="text-sm font-semibold">
                 {activeWarehouse} 부족 재고 현황
               </div>
-              <div className="text-[11px] text-gray-500">
-                목표 재고 대비 부족한 품목만 표시합니다. 행을 선택하면 우측에서
-                보충 계획을 설정할 수 있습니다.
-              </div>
             </div>
 
             <div className="text-right text-[11px] text-gray-500">

@@ -31,9 +31,6 @@ export default function OrderPage({ searchParams }: OrderPageProps) {
       <header className="rounded-2xl border bg-white px-6 py-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-lg font-semibold">주문관리</h1>
-          <p className="text-[12px] text-gray-500">
-            주문서 관리 및 Picking 작업 현황을 조회하는 화면입니다.
-          </p>
         </div>
       </header>
 

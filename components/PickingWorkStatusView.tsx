@@ -9,8 +9,6 @@ interface PickingItem {
   id: string;
   stage: PickingStage;
   productName: string;
-  // 내부적으로는 주문번호/코드 등을 가질 수 있지만
-  // 현황판에는 상품명만 크게 표시
   orderNo?: string;
   remark?: string;
 }
@@ -31,7 +29,7 @@ interface RobotProduct {
 interface RobotInfo {
   id: string; // 로봇1 ~ 로봇4
   status: RobotStatus;
-  currentLocation: string; // 피킹존 내부 위치
+  currentLocation: string; // (내부적으로만 사용 가능)
   carriedItems: RobotProduct[]; // 한 번에 여러 제품(최대 6박스)
   message?: string;
   progress: number; // 0~100
@@ -42,7 +40,7 @@ interface RobotInfo {
 // ----------------------
 
 const MOCK_PICKING_ITEMS: PickingItem[] = [
-  // 입고중: AMR이 피킹존 안에서 컨베이어 입구까지 박스를 가져오는 중
+  // 입고중
   {
     id: "IN-001",
     stage: "입고중",
@@ -58,7 +56,7 @@ const MOCK_PICKING_ITEMS: PickingItem[] = [
     remark: "로봇3 적재 완료, 컨베이어로 이동 중",
   },
 
-  // 작업중: 컨베이어 위에서 QR 스캔 완료, 작업대에서 포장 중
+  // 작업중
   {
     id: "WK-001",
     stage: "작업중",
@@ -74,7 +72,7 @@ const MOCK_PICKING_ITEMS: PickingItem[] = [
     remark: "작업대 B에서 2번/3번 주문 공용 사용",
   },
 
-  // 출고대기: 작업자가 포장을 마치고 출고대기라인으로 보낸 상태
+  // 출고대기
   {
     id: "OUT-001",
     stage: "출고대기",
@@ -141,34 +139,26 @@ function stageTitle(stage: PickingStage) {
   return stage;
 }
 
-function stageDescription(stage: PickingStage) {
-  if (stage === "입고중")
-    return "AMR가 피킹존 컨베이어 입구로 박스를 가져오는 상태";
-  if (stage === "작업중")
-    return "컨베이어에서 작업대로 옮겨져 포장 작업이 진행 중인 상태";
-  return "포장 완료 후 출고대기 라인으로 보낸 상태";
-}
-
 function stageColor(stage: PickingStage) {
-  if (stage === "입고중") return "border-blue-300 bg-blue-50/80";
-  if (stage === "작업중") return "border-emerald-300 bg-emerald-50/80";
-  return "border-amber-300 bg-amber-50/80";
+  if (stage === "입고중") return "border-blue-200 bg-blue-50/80";
+  if (stage === "작업중") return "border-emerald-200 bg-emerald-50/80";
+  return "border-amber-200 bg-amber-50/80";
 }
 
 function robotStatusChipClass(status: RobotStatus) {
   switch (status) {
     case "대기":
-      return "bg-gray-50 text-gray-700 border border-gray-300";
+      return "bg-gray-100 text-gray-800 border border-gray-300";
     case "호출이동중":
-      return "bg-sky-50 text-sky-700 border border-sky-200";
+      return "bg-sky-100 text-sky-800 border border-sky-300";
     case "작업대이동":
-      return "bg-blue-50 text-blue-700 border border-blue-200";
+      return "bg-blue-100 text-blue-800 border border-blue-300";
     case "출고대기존이동":
-      return "bg-amber-50 text-amber-700 border border-amber-200";
+      return "bg-amber-100 text-amber-800 border border-amber-300";
     case "복귀중":
-      return "bg-indigo-50 text-indigo-700 border border-indigo-200";
+      return "bg-indigo-100 text-indigo-800 border border-indigo-300";
     case "오류":
-      return "bg-red-50 text-red-700 border border-red-200";
+      return "bg-red-100 text-red-800 border border-red-300";
   }
 }
 
@@ -197,21 +187,18 @@ export function PickingWorkStatusView() {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold">피킹존 작업 현황판</div>
-            <div className="text-[11px] text-gray-500">
-              피킹존 내부에서 AMR 입고 → 작업대 포장 → 출고대기로 이어지는
-              흐름을 한눈에 표시합니다.
-            </div>
+            {/* 부수 설명 제거 – 여백만 살짝 */}
           </div>
           <div className="text-right text-[11px] text-gray-500">
-            입고중:{" "}
+            입고중{" "}
             <span className="font-semibold text-blue-600">
               {inboundItems.length}건
             </span>{" "}
-            / 작업중:{" "}
+            · 작업중{" "}
             <span className="font-semibold text-emerald-600">
               {workingItems.length}건
             </span>{" "}
-            / 출고대기:{" "}
+            · 출고대기{" "}
             <span className="font-semibold text-amber-600">
               {waitingItems.length}건
             </span>
@@ -236,24 +223,21 @@ export function PickingWorkStatusView() {
                     stage,
                   )}`}
                 >
-                  {/* 컬럼 헤더: 중앙 정렬, 큰 텍스트 */}
-                  <div className="mb-2 flex flex-col items-center text-center">
-                    <div className="text-[20px] font-bold tracking-wide text-slate-800">
+                  {/* 컬럼 헤더: 설명 없이 큼직하게 */}
+                  <div className="mb-3 flex flex-col items-center text-center">
+                    <div className="text-[22px] font-bold tracking-wide text-slate-900">
                       {stageTitle(stage)}
                     </div>
                     <div className="mt-1 text-[11px] text-slate-600">
-                      {stageDescription(stage)}
-                    </div>
-                    <div className="mt-1 text-[10px] text-slate-500">
                       총{" "}
-                      <span className="font-semibold text-slate-700">
+                      <span className="font-semibold text-slate-900">
                         {list.length}개 상품
                       </span>
                     </div>
                   </div>
 
-                  {/* 상품 리스트: 상품명만 크게 */}
-                  <div className="flex-1 overflow-auto rounded-xl bg-white/90 px-2 py-3">
+                  {/* 상품 리스트: 상품명만 크게 표시 */}
+                  <div className="flex-1 overflow-auto rounded-xl bg-white/95 px-2 py-3">
                     {list.length === 0 ? (
                       <div className="flex h-full items-center justify-center text-[11px] text-gray-400">
                         현재 표시할 상품이 없습니다.
@@ -263,24 +247,12 @@ export function PickingWorkStatusView() {
                         {list.map((item) => (
                           <div
                             key={item.id}
-                            className="flex flex-col items-center rounded-lg border border-gray-200 bg-white px-2 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                            className="flex h-[88px] flex-col items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
                           >
-                            {/* 상품명 크게 */}
-                            <div className="text-center text-[18px] font-semibold text-slate-900 leading-snug">
+                            <div className="text-center text-[18px] font-semibold leading-snug text-slate-900">
                               {item.productName}
                             </div>
-
-                            {/* 부가정보는 아주 작게 (있어도 되고 없어도 되는 정도) */}
-                            {(item.orderNo || item.remark) && (
-                              <div className="mt-1 text-center text-[10px] text-slate-500">
-                                {item.orderNo && (
-                                  <span className="mr-1 font-mono">
-                                    {item.orderNo}
-                                  </span>
-                                )}
-                                {item.remark && <span>{item.remark}</span>}
-                              </div>
-                            )}
+                            {/* 부수적인 설명(주문번호/비고) 완전히 제거 */}
                           </div>
                         ))}
                       </div>
@@ -293,16 +265,13 @@ export function PickingWorkStatusView() {
         </div>
       </section>
 
-      {/* 우측: 로봇 현황 */}
+      {/* 우측: 로봇 현황 (로봇번호 / 상태 / 적재상품만) */}
       <section className="flex w-[360px] flex-col gap-3 rounded-2xl border bg-slate-950/95 p-4 text-[12px] text-slate-50">
         <div className="mb-1 flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold">피킹존 로봇 현황</div>
-            <div className="text-[10px] text-slate-300">
-              피킹존 내부에서 주문건을 처리 중인 AMR 4대의 상태와 적재 상품입니다.
-            </div>
           </div>
-          <div className="text-right text-[10px] text-slate-400">
+          <div className="text-right text-[10px] text-slate-300">
             총{" "}
             <span className="font-semibold text-slate-50">
               {MOCK_ROBOTS.length}대
@@ -310,73 +279,54 @@ export function PickingWorkStatusView() {
           </div>
         </div>
 
-        <div className="flex-1 space-y-2 overflow-auto rounded-xl bg-slate-900/80 p-2">
+        <div className="flex-1 space-y-2 overflow-auto rounded-xl bg-slate-900/80 p-3">
           {MOCK_ROBOTS.map((bot) => (
             <div
               key={bot.id}
-              className="flex flex-col gap-1 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2"
+              className="flex flex-col gap-2 rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3"
             >
+              {/* 로봇 번호 + 상태 */}
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="rounded bg-slate-800 px-2 py-0.5 text-[11px] font-semibold">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[16px] font-bold text-slate-50">
                     {bot.id}
                   </span>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] ${robotStatusChipClass(
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold ${robotStatusChipClass(
                       bot.status,
                     )}`}
                   >
                     {bot.status}
                   </span>
                 </div>
-                <span className="text-[10px] text-slate-300">
-                  {bot.progress}%
-                </span>
               </div>
 
-              <div className="text-[10px] text-slate-300">
-                위치: {bot.currentLocation}
-              </div>
-
-              {/* 진행도 바 */}
-              <div className="mt-1 h-1.5 w-full rounded-full bg-slate-800">
-                <div
-                  className="h-1.5 rounded-full bg-emerald-400 transition-all"
-                  style={{ width: `${bot.progress}%` }}
-                />
-              </div>
-
-              {/* 적재 상품 리스트 (최대 6개 가정) */}
-              <div className="mt-2">
-                <div className="mb-1 text-[10px] text-slate-300">
+              {/* 적재 상품 */}
+              <div>
+                <div className="mb-2 text-[13px] font-semibold text-slate-50">
                   적재 상품{" "}
                   <span className="font-semibold text-slate-50">
                     {bot.carriedItems.length}개
                   </span>
                 </div>
                 {bot.carriedItems.length === 0 ? (
-                  <div className="text-[10px] text-slate-500">
+                  <div className="rounded-lg bg-slate-900 px-3 py-2 text-[11px] text-slate-500">
                     현재 적재된 박스 없음
                   </div>
                 ) : (
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5">
                     {bot.carriedItems.map((p) => (
-                      <span
-                        key={p.id}
-                        className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-50"
-                      >
-                        {p.productName}
-                      </span>
+                  <span
+                    key={p.id}
+                    className="rounded-xl bg-slate-800 px-4 py-1.5 text-[13px] font-semibold text-slate-50 shadow-md"
+                  >
+                    {p.productName}
+                  </span>
                     ))}
                   </div>
                 )}
               </div>
-
-              {bot.message && (
-                <div className="mt-1 text-[10px] text-emerald-300">
-                  · {bot.message}
-                </div>
-              )}
+              {/* 위치 / 진행도 / 메세지 등 부수적인 정보는 모두 숨김 */}
             </div>
           ))}
         </div>

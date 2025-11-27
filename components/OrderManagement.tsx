@@ -1,3 +1,4 @@
+// components/OrderManagement.tsx
 "use client";
 
 import { useMemo, useState } from "react";
@@ -5,7 +6,6 @@ import type { Order, OrderItem, OrderStatus } from "./types";
 import { OrderList } from "./OrderList";
 import { OrderDetail } from "./OrderDetail";
 import { RobotProductCallModal } from "./RobotProductCallModal";
-import { StockManualAdjustModal } from "./StockManualAdjustModal";
 
 // 기본 주문 데이터
 const baseOrders: Order[] = [
@@ -106,8 +106,6 @@ const buildInitialItemsByOrder = (
   return map;
 };
 
-type RobotModalMode = "manual" | "emergency";
-
 export default function OrderManagement() {
   const [orders, setOrders] = useState<Order[]>(baseOrders);
   const [itemsByOrderId, setItemsByOrderId] = useState<
@@ -118,10 +116,8 @@ export default function OrderManagement() {
     orders[0]?.id ?? "",
   );
 
+  // 🔸 주문관리 전용: 긴급 호출 모달 상태 (수동 호출은 상단 공통 버튼에서 관리)
   const [robotModalOpen, setRobotModalOpen] = useState(false);
-  const [robotModalMode, setRobotModalMode] =
-    useState<RobotModalMode>("manual");
-  const [stockModalOpen, setStockModalOpen] = useState(false);
 
   const activeOrder = useMemo(
     () => orders.find((o) => o.id === activeOrderId) ?? orders[0],
@@ -152,51 +148,48 @@ export default function OrderManagement() {
     );
   };
 
-  // ✅ 수동/긴급 공통으로 모달 열기
-  const openRobotModal = (mode: RobotModalMode) => {
-    setRobotModalMode(mode);
+  // ✅ 긴급 호출 버튼에서 모달 열기 (긴급 모드 전용)
+  const openEmergencyModal = () => {
     setRobotModalOpen(true);
   };
 
   // ✅ 긴급호출에서 긴급출고 주문 생성
   // RobotProductCallModal 의 onConfirmEmergency 에 연결
   const handleCreateEmergencyOrder = (
-  products: { code: string; name: string }[],
-) => {
-  if (products.length === 0) return;
+    products: { code: string; name: string }[],
+  ) => {
+    if (products.length === 0) return;
 
-  const newId = `EMG-${Date.now()}`;
+    const newId = `EMG-${Date.now()}`;
 
-  // 왼쪽 주문서 목록에 표시할 이름
-  const displayName =
-    products.length === 1
-      ? products[0].name
-      : `${products[0].name} 외`;
+    // 왼쪽 주문서 목록에 표시할 이름
+    const displayName =
+      products.length === 1 ? products[0].name : `${products[0].name} 외`;
 
-  const emergencyOrder: Order = {
-    id: newId,
-    customer: displayName, // 🔸 고객명 칸
-    dueDate: "긴급",
-    status: "출고중",
-    zone: "수도권",
-    isEmergency: true, // 🔸 긴급출고 플래그
+    const emergencyOrder: Order = {
+      id: newId,
+      customer: displayName, // 고객명 칸
+      dueDate: "긴급",
+      status: "출고중",
+      zone: "수도권",
+      isEmergency: true, // 긴급출고 플래그
+    };
+
+    // 오른쪽 상세에 나올 품목들
+    const emergencyItems: OrderItem[] = products.map((p, idx) => ({
+      code: `EMG-${(idx + 1).toString().padStart(3, "0")}`,
+      name: p.name,
+      orderQty: 0, // 수량은 상세 화면에서 직접 입력
+      stockQty: 0,
+    }));
+
+    setOrders((prev) => [emergencyOrder, ...prev]);
+    setItemsByOrderId((prev) => ({
+      ...prev,
+      [newId]: emergencyItems,
+    }));
+    setActiveOrderId(newId);
   };
-
-  // 오른쪽 상세에 나올 품목들
-  const emergencyItems: OrderItem[] = products.map((p, idx) => ({
-    code: `EMG-${(idx + 1).toString().padStart(3, "0")}`,
-    name: p.name,
-    orderQty: 0, // 수량은 상세 화면에서 직접 입력
-    stockQty: 0,
-  }));
-
-  setOrders((prev) => [emergencyOrder, ...prev]);
-  setItemsByOrderId((prev) => ({
-    ...prev,
-    [newId]: emergencyItems,
-  }));
-  setActiveOrderId(newId);
-};
 
   // 출고 완료 버튼 눌렀을 때 (일반 주문 + 긴급출고 모두 공통)
   const handleCompleteOrder = (newItems: OrderItem[]) => {
@@ -229,33 +222,17 @@ export default function OrderManagement() {
             </div>
           </div>
 
+          {/* 오른쪽 버튼 영역 */}
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            {/* 🚨 긴급 호출 : 긴급 모드로 모달 오픈 (주문서 생성) */}
+            {/* 🚨 긴급 호출 : 긴급 모드로 모달 오픈 (긴급 출고용 주문 생성) */}
             <button
               type="button"
               className="text-xs px-3 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white"
-              onClick={() => openRobotModal("emergency")}
+              onClick={openEmergencyModal}
             >
               🚨 긴급 호출
             </button>
-
-            {/* 🤖 AMR 수동 호출 : 주문서 생성 없이 단순 호출 */}
-            <button
-              type="button"
-              className="text-xs px-3 py-1.5 rounded-full bg-gray-800 hover:bg-gray-700 text-white"
-              onClick={() => openRobotModal("manual")}
-            >
-              🤖 AMR 수동 호출
-            </button>
-
-            {/* 🧮 파렛트 입출고 */}
-            <button
-              type="button"
-              className="text-xs px-3 py-1.5 rounded-full bg-white border border-gray-300 text-gray-800 hover:bg-gray-50"
-              onClick={() => setStockModalOpen(true)}
-            >
-              🧮 파렛트 입출고
-            </button>
+            {/* ⚠️ AMR 수동 호출 / 파렛트 입출고는 상단 공통 메뉴(검정바)에서 사용 */}
           </div>
         </div>
       </div>
@@ -281,19 +258,12 @@ export default function OrderManagement() {
         </div>
       </div>
 
-      {/* AMR 수동/긴급 호출 모달 */}
+      {/* 🔴 주문관리 전용 긴급 호출 모달 (mode="emergency") */}
       <RobotProductCallModal
         open={robotModalOpen}
-        mode={robotModalMode}
+        mode="emergency"
         onClose={() => setRobotModalOpen(false)}
         onConfirmEmergency={handleCreateEmergencyOrder}
-        // onConfirmSelection 은 수동 호출에서만 필요하면 나중에 추가
-      />
-
-      {/* 파렛트 수동 입출고 모달 */}
-      <StockManualAdjustModal
-        open={stockModalOpen}
-        onClose={() => setStockModalOpen(false)}
       />
     </div>
   );

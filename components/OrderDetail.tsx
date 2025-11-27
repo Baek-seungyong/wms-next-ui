@@ -1,11 +1,16 @@
 // components/OrderDetail.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { ReactElement } from "react";
 import type { Order, OrderItem, OrderStatus } from "./types";
 import { statusBadgeClass } from "./types";
 import { PalletDirectTransferModal } from "./PalletDirectTransferModal";
+import {
+  getReplenishMarks,
+  toggleReplenishMark,
+  type ReplenishMark,
+} from "@/utils/replenishMarkStore";
 
 type Props = {
   order: Order | null;
@@ -15,6 +20,22 @@ type Props = {
   onComplete?: (newItems: OrderItem[]) => void;
 };
 
+type LocationStatus = "창고" | "입고중" | "작업중" | "출고중";
+
+const locationBadgeClass = (loc: LocationStatus) => {
+  switch (loc) {
+    case "창고":
+      return "bg-gray-100 text-gray-700";
+    case "입고중":
+      return "bg-sky-50 text-sky-700";
+    case "작업중":
+      return "bg-amber-50 text-amber-700";
+    case "출고중":
+      return "bg-emerald-50 text-emerald-700";
+    default:
+      return "bg-gray-100 text-gray-700";
+  }
+};
 
 export function OrderDetail({
   order,
@@ -39,6 +60,33 @@ export function OrderDetail({
   // 🔹 행별 AMR 출발 위치 (피킹 / 2-1 / 3-1 등) 저장
   const [amrRouteMap, setAmrRouteMap] = useState<Record<string, string>>({});
 
+  // 🔹 행별 위치 상태 (창고 / 입고중 / 작업중 / 출고중)
+  // 기본값을 SAMPLE로 4개 상태가 1개씩 나오도록 설정
+  const [locationMap, setLocationMap] = useState<Record<string, LocationStatus>>(
+    {
+      "P-001": "창고", // 1번 : 창고
+      "P-013": "입고중", // 2번 : 입고중
+      "C-201": "작업중", // 3번 : 작업중
+      "L-009": "출고중", // 4번 : 출고중
+    },
+  );
+
+  // 🔹 보충 마킹 상태 (localStorage 연동)
+  const [markedList, setMarkedList] = useState<ReplenishMark[]>([]);
+
+  useEffect(() => {
+    // 처음 로딩 시 localStorage에 저장된 마킹 불러오기
+    setMarkedList(getReplenishMarks());
+  }, []);
+
+  const handleToggleMark = (code: string, name: string) => {
+    const next = toggleReplenishMark(code, name);
+    setMarkedList(next);
+  };
+
+  const isProductMarked = (code: string) =>
+    markedList.some((m) => m.code === code);
+
   // 🔹 지정이송 모달 상태
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferTarget, setTransferTarget] = useState<{
@@ -47,32 +95,14 @@ export function OrderDetail({
     route: string;
   } | null>(null);
 
-  // 🔹 피킹에서 지정이송 시 메시지
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
   const handleClickComplete = () => {
-  if (onComplete) {
-    onComplete(items); // 🔹 선택된 주문의 아이템 목록을 넘겨줌
-  }
-};
-
+    if (onComplete) {
+      onComplete(items); // 🔹 선택된 주문의 아이템 목록을 넘겨줌
+    }
+  };
 
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
-      {/* 에러 안내 (피킹 선택 후 지정이송 시) */}
-      {errorMsg && (
-        <div className="mb-3 rounded-md border border-red-300 bg-red-100 px-3 py-2 text-[12px] text-red-700">
-          {errorMsg}
-          <button
-            type="button"
-            onClick={() => setErrorMsg(null)}
-            className="float-right text-[11px] text-red-700 underline"
-          >
-            닫기
-          </button>
-        </div>
-      )}
-
       {/* 헤더 정보 */}
       <div className="mb-3 flex items-center justify-between">
         <div>
@@ -90,6 +120,13 @@ export function OrderDetail({
             출고위치:{" "}
             <span className="font-medium text-gray-700">
               {(order as any).shipLocation ?? "2층 피킹라인 (고정)"}
+            </span>
+          </div>
+          {/* 보충 마킹 개수 간단 표시 */}
+          <div className="mt-1 text-[11px] text-gray-500">
+            보충 마킹된 품목:{" "}
+            <span className="ml-1 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">
+              {markedList.length}개
             </span>
           </div>
         </div>
@@ -124,7 +161,9 @@ export function OrderDetail({
               <th className="border-b px-3 py-2 text-right">피킹창고 재고</th>
               <th className="border-b px-3 py-2 text-center">상태</th>
               <th className="border-b px-3 py-2 text-center">AMR 호출</th>
-              <th className="border-b px-3 py-2 text-left">메모</th>
+              <th className="border-b px-3 py-2 text-center">위치</th>
+              {/* 🔹 맨 오른쪽에 마킹 컬럼 */}
+              <th className="border-b px-3 py-2 text-center">마킹</th>
             </tr>
           </thead>
           <tbody>
@@ -134,7 +173,9 @@ export function OrderDetail({
               const lowStock = (it as any).lowStock;
               const pickingStock = (it as any).pickingStock ?? 0;
               const qty = (it as any).qty ?? (it as any).orderQty ?? 0;
-              const memo = (it as any).memo ?? "";
+
+              const location: LocationStatus = locationMap[key] ?? "창고";
+              const marked = isProductMarked(key);
 
               return (
                 <tr key={key} className="bg-white">
@@ -144,12 +185,16 @@ export function OrderDetail({
                   <td className="border-t px-3 py-2 text-[12px]">
                     {(it as any).name}
                   </td>
-                  <td className="border-t px-3 py-2 text-right">
-                    {qty} EA
-                  </td>
+
+                  {/* 주문수량 */}
+                  <td className="border-t px-3 py-2 text-right">{qty} EA</td>
+
+                  {/* 피킹창고 재고 */}
                   <td className="border-t px-3 py-2 text-right">
                     {pickingStock} EA
                   </td>
+
+                  {/* 상태 */}
                   <td className="border-t px-3 py-2 text-center">
                     {lowStock ? (
                       <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[11px] text-red-600">
@@ -180,26 +225,23 @@ export function OrderDetail({
                         <option value="3-1">3-1</option>
                       </select>
 
-                      {/* 기존 AMR 호출 버튼 (동작은 나중에 연결) */}
                       <button
                         type="button"
                         className="rounded-full bg-gray-900 px-2 py-0.5 text-[11px] text-white"
+                        onClick={() =>
+                          setLocationMap((prev) => ({
+                            ...prev,
+                            [key]: "입고중",
+                          }))
+                        }
                       >
                         호출
                       </button>
 
-                      {/* 🔹 지정이송 버튼 */}
                       <button
                         type="button"
                         className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-100"
                         onClick={() => {
-                          if (routeValue === "피킹") {
-                            setErrorMsg(
-                              "피킹창고에서는 지정이송을 할 수 없습니다.",
-                            );
-                            return;
-                          }
-
                           setTransferTarget({
                             code: key,
                             name: (it as any).name,
@@ -213,8 +255,36 @@ export function OrderDetail({
                     </div>
                   </td>
 
-                  <td className="border-t px-3 py-2 text-[11px] text-gray-600">
-                    {memo}
+                  {/* 위치 */}
+                  <td className="border-t px-3 py-2 text-center">
+                    <span
+                      className={`inline-flex min-w-[60px] justify-center rounded-full px-2 py-0.5 text-[11px] ${locationBadgeClass(
+                        location,
+                      )}`}
+                    >
+                      {location}
+                    </span>
+                  </td>
+
+                  {/* 🔹 맨 오른쪽: 마킹 버튼 (☆ / ★ 토글) */}
+                  <td className="border-t px-3 py-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleToggleMark(key, (it as any).name ?? "")
+                      }
+                      className={`mx-auto inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] border transition
+                        ${
+                          marked
+                            ? "border-amber-400 bg-amber-50 text-amber-700"
+                            : "border-gray-300 bg-white text-gray-500 hover:bg-gray-50"
+                        }`}
+                      title={marked ? "마킹 해제" : "나중에 재고 보충이 필요하면 눌러두세요"}
+                    >
+                      <span className="text-[13px] leading-none">
+                        {marked ? "★" : "☆"}
+                      </span>
+                    </button>
                   </td>
                 </tr>
               );
@@ -225,10 +295,7 @@ export function OrderDetail({
 
       {/* 하단 안내 + 버튼 */}
       <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
-        <div className="space-y-1">
-          <p>· 이 화면은 피킹라인 작업자 기준 출고 UI 예시입니다.</p>
-          <p>· 피킹창고 부족 상품은 상단 AMR 수동 호출 버튼으로 보충합니다.</p>
-        </div>
+        <div className="space-y-1" />
         <div className="flex items-center gap-2">
           <button
             type="button"
