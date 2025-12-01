@@ -182,11 +182,16 @@ export function WarehouseMapView() {
   const [activeProduct, setActiveProduct] = useState<ProductInfo | null>(null);
   const [highlightedCellIds, setHighlightedCellIds] = useState<string[]>([]);
   const [selectedCell, setSelectedCell] = useState<RackCell | null>(null);
-  const [selectedInventory, setSelectedInventory] = useState<CellInventoryRow[]>([]);
+  const [selectedInventory, setSelectedInventory] = useState<CellInventoryRow[]>(
+    [],
+  );
+  // 🔹 위치별 요약에서 선택한 한 줄(레벨)
+  const [selectedDetail, setSelectedDetail] = useState<CellInventoryRow | null>(
+    null,
+  );
 
   // 🔹 추천 리스트를 보여줄지 여부
   const [showSuggestions, setShowSuggestions] = useState(false);
-
 
   // ✅ 첫 화면 축소 상태 (3층은 CAD 이미지라 작게 시작)
   const [zoom, setZoom] = useState(0.2);
@@ -206,6 +211,7 @@ export function WarehouseMapView() {
     setHighlightedCellIds([]);
     setSelectedCell(null);
     setSelectedInventory([]);
+    setSelectedDetail(null);
   }, [activeZone]);
 
   // zoom 상태를 ref에도 동기화 (전역 wheel 핸들러에서 최신 값 사용)
@@ -275,33 +281,48 @@ export function WarehouseMapView() {
     setHighlightedCellIds(matchedIds);
     setSelectedCell(null);
     setSelectedInventory([]);
-    setShowSuggestions(false);  // 🔹 검색이 끝나면 리스트 닫기
+    setSelectedDetail(null);
+    setShowSuggestions(false); // 🔹 검색이 끝나면 리스트 닫기
   };
-
 
   const handleClickCell = (cell: RackCell) => {
     if (!cell.isStorage) return;
     setSelectedCell(cell);
     const inventory = buildFakeInventory(cell, activeProduct);
     setSelectedInventory(inventory);
+    // 렉을 새로 선택하면 상세 선택은 초기화
+    setSelectedDetail(null);
   };
 
   const handleCall = () => {
-    if (!selectedCell || selectedInventory.length === 0) {
-      alert("호출할 위치와 상품을 먼저 선택해 주세요.");
+    if (!selectedCell) {
+      alert("호출할 위치를 먼저 선택해 주세요.");
       return;
     }
-    const first = selectedInventory[0];
+    if (!selectedDetail) {
+      alert("호출할 제품(층)을 위치별 요약에서 선택해 주세요.");
+      return;
+    }
     const loc = formatCellLocation(selectedCell);
     alert(
-      `${zoneLabel(selectedCell.zone)}\n${loc} 위치의 ${first.productCode} / ${first.productName}를 호출합니다.`,
+      `${zoneLabel(
+        selectedCell.zone,
+      )}\n${loc} 위치의 ${selectedDetail.productCode} / ${selectedDetail.productName}를 호출합니다.`,
     );
+  };
+
+  // ❌ 선택된 상품/검색 상태 지우기
+  const handleClearActiveProduct = () => {
+    setActiveProduct(null);
+    setHighlightedCellIds([]);
+    setSelectedCell(null);
+    setSelectedInventory([]);
+    setSelectedDetail(null);
+    setSearchText("");
   };
 
   // -----------------------------
   // ✅ 존 변경 시 줌 초기값 조정
-  //  - 3F: CAD 이미지라 기본 0.2 배
-  //  - 2F / PICKING: auto-fit 에서 다시 계산하므로 일단 1로
   // -----------------------------
   useEffect(() => {
     if (activeZone === "3F") {
@@ -326,12 +347,11 @@ export function WarehouseMapView() {
       // 휠 이벤트가 viewport 바깥에서 난 경우 무시
       if (!viewport.contains(e.target as Node)) return;
 
-      // 브라우저 기본 스크롤 막기 (윈도우 같이 안 내려가게)
+      // 브라우저 기본 스크롤 막기
       e.preventDefault();
 
       const rect = viewport.getBoundingClientRect();
 
-      // 뷰포트 안에서의 마우스 위치
       const offsetX = e.clientX - rect.left;
       const offsetY = e.clientY - rect.top;
 
@@ -339,17 +359,15 @@ export function WarehouseMapView() {
       const scrollTop = viewport.scrollTop;
 
       const currentZoom = zoomRef.current;
-      const delta = e.deltaY > 0 ? -0.05 : 0.05; // 아래 = 축소, 위 = 확대
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
       let nextZoom = currentZoom + delta;
       if (nextZoom < 0.1) nextZoom = 0.1;
       if (nextZoom > 2) nextZoom = 2;
       if (nextZoom === currentZoom) return;
 
-      // 마우스가 가리키는 도면상의 좌표 (scale 적용 전 기준)
       const mouseContentX = (scrollLeft + offsetX) / currentZoom;
       const mouseContentY = (scrollTop + offsetY) / currentZoom;
 
-      // 새 줌에서 같은 지점을 같은 화면 위치에 보이게 스크롤 조정
       const newScrollLeft = mouseContentX * nextZoom - offsetX;
       const newScrollTop = mouseContentY * nextZoom - offsetY;
 
@@ -371,9 +389,7 @@ export function WarehouseMapView() {
   }, [activeZone]);
 
   // -----------------------------
-  // ✅ 2F / PICKING 자동 확대 (창 크기에 맞추기)
-  //  - viewport / content 크기를 비교해서 zoom 계산
-  //  - 윈도우 리사이즈 / 존 변경 시 자동 반응
+  // ✅ 2F / PICKING 자동 확대
   // -----------------------------
   useEffect(() => {
     if (activeZone === "3F") return; // 3층은 사용자가 수동 줌
@@ -390,7 +406,6 @@ export function WarehouseMapView() {
 
       if (!cw || !ch || !vw || !vh) return;
 
-      // 도면 전체가 보이도록 비율 계산 (조금 여유 0.9)
       let next = Math.min(vw / cw, vh / ch) * 0.9;
       if (next > 2) next = 2;
       if (next < 0.2) next = 0.2;
@@ -436,7 +451,6 @@ export function WarehouseMapView() {
     }
 
     if (is3F) {
-      // 3F는 지금 도면 이미지만 사용하니까 여기서는 단순 버튼
       return (
         <button
           type="button"
@@ -510,12 +524,12 @@ export function WarehouseMapView() {
               value={searchText}
               onChange={(e) => {
                 setSearchText(e.target.value);
-                setShowSuggestions(true); // 🔹 입력하면 추천 리스트 열기
+                setShowSuggestions(true); // 입력하면 추천 리스트 열기
               }}
               onKeyDown={(e: ReactKeyboardEvent<HTMLInputElement>) => {
                 if (e.key === "Enter") {
                   handleSearch();
-                  setShowSuggestions(false); // 🔹 엔터 검색 후 닫기
+                  setShowSuggestions(false); // 엔터 검색 후 닫기
                 }
               }}
               className="h-8 flex-1 rounded border px-2 text-[11px]"
@@ -525,7 +539,7 @@ export function WarehouseMapView() {
               type="button"
               onClick={() => {
                 handleSearch();
-                setShowSuggestions(false);   // 🔹 버튼 검색 후 닫기
+                setShowSuggestions(false);
               }}
               className="h-8 rounded bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-700"
             >
@@ -533,7 +547,7 @@ export function WarehouseMapView() {
             </button>
           </div>
 
-          {/* 🔹 추천 리스트: showSuggestions 가 true일 때만 렌더링 */}
+          {/* 추천 리스트 */}
           {showSuggestions && suggestions.length > 0 && (
             <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px]">
               {suggestions.map((p) => (
@@ -541,9 +555,8 @@ export function WarehouseMapView() {
                   key={p.code}
                   type="button"
                   onClick={() => {
-                    // 클릭하면 그 상품으로 바로 검색 실행
                     handleSearch(p.code);
-                    setShowSuggestions(false);   // 🔹 리스트 즉시 닫기
+                    setShowSuggestions(false);
                   }}
                   className="flex w-full items-center justify-between px-2 py-1 text-left hover:bg-gray-100"
                 >
@@ -554,20 +567,30 @@ export function WarehouseMapView() {
             </div>
           )}
 
-          {/* 현재 존 / 현재 검색 상품 표시 */}
+          {/* 현재 존 / 현재 검색 상품 */}
           <div className="mt-2 text-[11px] text-gray-600">
             현재 존:&nbsp;
             <span className="font-semibold">{zoneLabel(activeZone)}</span>
           </div>
 
           {activeProduct ? (
-            <div className="mt-2 rounded-lg border border-blue-600 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-800 shadow-sm">
+            <div className="mt-2 flex items-center justify-between rounded-lg border border-blue-600 bg-blue-50 px-3 py-2 text-[12px] text-blue-800 shadow-sm">
               <div className="flex items-center gap-2">
                 <span className="rounded-md bg-blue-700 px-2 py-0.5 font-mono text-[11px] text-white">
                   {activeProduct.code}
                 </span>
-                <span className="text-[12px]">{activeProduct.name}</span>
+                <span className="text-[12px] font-semibold">
+                  {activeProduct.name}
+                </span>
               </div>
+              <button
+                type="button"
+                onClick={handleClearActiveProduct}
+                className="ml-3 flex h-5 w-5 items-center justify-center rounded-full border border-blue-300 text-xs font-bold text-blue-600 hover:bg-blue-100"
+                aria-label="선택 상품 지우기"
+              >
+                ×
+              </button>
             </div>
           ) : (
             <div className="mt-1 text-[11px] text-gray-400">
@@ -599,6 +622,7 @@ export function WarehouseMapView() {
             )}
           </div>
 
+          {/* ① 위치별 요약 */}
           <div className="mb-2 rounded border bg-white p-2">
             <div className="mb-1 font-semibold text-gray-700">
               ① 위치별 요약
@@ -624,56 +648,73 @@ export function WarehouseMapView() {
                     </td>
                   </tr>
                 ) : (
-                  selectedInventory.map((row) => (
-                    <tr key={row.level}>
-                      <td className="border px-1 py-1">{row.level}층</td>
-                      <td className="border px-1 py-1 font-mono">
-                        {row.productCode}
-                      </td>
-                      <td className="border px-1 py-1">{row.productName}</td>
-                      <td className="border px-1 py-1">{row.lot}</td>
-                      <td className="border px-1 py-1 text-right">
-                        {row.qty.toLocaleString()}EA
-                      </td>
-                    </tr>
-                  ))
+                  selectedInventory.map((row) => {
+                    const isSelected =
+                      selectedDetail?.level === row.level &&
+                      selectedDetail.productCode === row.productCode &&
+                      selectedDetail.lot === row.lot;
+                    return (
+                      <tr
+                        key={row.level}
+                        onClick={() => setSelectedDetail(row)}
+                        className={
+                          "cursor-pointer " +
+                          (isSelected
+                            ? "bg-sky-100"
+                            : "hover:bg-sky-50")
+                        }
+                      >
+                        <td className="border px-1 py-1">{row.level}층</td>
+                        <td className="border px-1 py-1 font-mono">
+                          {row.productCode}
+                        </td>
+                        <td className="border px-1 py-1">
+                          {row.productName}
+                        </td>
+                        <td className="border px-1 py-1">{row.lot}</td>
+                        <td className="border px-1 py-1 text-right">
+                          {row.qty.toLocaleString()}EA
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
 
+          {/* ② 선택 제품 상세 */}
           <div className="flex flex-1 flex-col justify-between rounded border bg-white p-2">
             <div>
               <div className="mb-1 font-semibold text-gray-700">
                 ② 선택 제품 상세
               </div>
-              {selectedInventory.length > 0 ? (
-                (() => {
-                  const first = selectedInventory[0];
-                  return (
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-                      <div className="text-gray-500">파렛트 위치</div>
-                      <div className="text-right font-mono">
-                        {selectedCell && formatCellLocation(selectedCell)}
-                      </div>
-                      <div className="text-gray-500">상품코드</div>
-                      <div className="text-right font-mono">
-                        {first.productCode}
-                      </div>
-                      <div className="text-gray-500">상품명</div>
-                      <div className="text-right">{first.productName}</div>
-                      <div className="text-gray-500">LOT</div>
-                      <div className="text-right font-mono">{first.lot}</div>
-                      <div className="text-gray-500">수량</div>
-                      <div className="text-right font-mono">
-                        {first.qty.toLocaleString()}EA
-                      </div>
-                    </div>
-                  );
-                })()
+              {selectedDetail && selectedCell ? (
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                  <div className="text-gray-500">파렛트 위치</div>
+                  <div className="text-right font-mono">
+                    {formatCellLocation(selectedCell)}
+                  </div>
+                  <div className="text-gray-500">상품코드</div>
+                  <div className="text-right font-mono">
+                    {selectedDetail.productCode}
+                  </div>
+                  <div className="text-gray-500">상품명</div>
+                  <div className="text-right">{selectedDetail.productName}</div>
+                  <div className="text-gray-500">LOT</div>
+                  <div className="text-right font-mono">
+                    {selectedDetail.lot}
+                  </div>
+                  <div className="text-gray-500">수량</div>
+                  <div className="text-right font-mono">
+                    {selectedDetail.qty.toLocaleString()}EA
+                  </div>
+                </div>
               ) : (
                 <div className="text-[11px] text-gray-400">
                   선택된 제품 정보가 없습니다.
+                  <br />
+                  (위치별 요약에서 행을 선택해 주세요.)
                 </div>
               )}
             </div>
@@ -737,7 +778,7 @@ export function WarehouseMapView() {
 
         <div ref={viewportRef} className={mapContainerClass}>
           <div
-            ref={contentRef} // ✅ auto-fit 대상
+            ref={contentRef}
             className="relative m-4 inline-block origin-top-left"
             style={{ transform: `scale(${zoom})` }}
           >
@@ -749,7 +790,6 @@ export function WarehouseMapView() {
                   className="block max-w-none"
                 />
 
-                {/* 오버레이 (필요하면 나중에 렉/파렛트 표시 넣기) */}
                 <div className="pointer-events-none absolute inset-0">
                   <div className="grid h-full w-full grid-rows-7 grid-cols-18">
                     {Array.from({ length: zoneLines }, (_, line) => (

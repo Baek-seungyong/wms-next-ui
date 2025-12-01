@@ -3,13 +3,12 @@
 
 import { useMemo, useState, ChangeEvent } from "react";
 
-type HistoryType =
-  | "입고"
-  | "출고"
-  | "보충"
-  | "조정"
-  | "생산투입"
-  | "생산완료";
+/**
+ * ✅ 작업 유형은 "입고" / "출고" 두 가지만 사용
+ *  - 창고 간 이동도 출고(–), 입고(+) 두 줄로 기록
+ *  - 보충/조정/생산 등은 비고(note)로 구분
+ */
+type HistoryType = "입고" | "출고";
 
 interface HistoryRow {
   id: string;
@@ -29,6 +28,7 @@ interface HistoryRow {
 // 더미 데이터
 // ----------------------
 const MOCK_HISTORY: HistoryRow[] = [
+  // 주문 출고
   {
     id: "H-001",
     date: "2025-11-25",
@@ -42,30 +42,32 @@ const MOCK_HISTORY: HistoryRow[] = [
     orderNo: "ORD-20251125-001",
     note: "[주문관리] 주문서 출고 처리 (AMR 피킹 후 출고)",
   },
+  // 2층 → 피킹창고 보충 (입고/출고 2줄로 기록)
   {
     id: "H-002",
     date: "2025-11-25",
     time: "09:05",
-    type: "보충",
+    type: "입고",
     warehouseLocation: "피킹 창고 / 1F-IN-01",
     productCode: "P-1001",
     productName: "PET 500ml 투명",
     lotNo: "LOT-2025-001",
     qty: 1800,
-    note: "[재고관리] 2층 잔량 파렛트 → 피킹 창고 보충",
+    note: "[재고관리] 2층 잔량 파렛트 → 피킹 창고 보충 (입고)",
   },
   {
     id: "H-003",
     date: "2025-11-25",
     time: "08:50",
-    type: "보충",
+    type: "출고",
     warehouseLocation: "2층 잔량 파렛트 창고 / 2F-R3-C5",
     productCode: "P-1001",
     productName: "PET 500ml 투명",
     lotNo: "LOT-2025-001",
     qty: -1800,
-    note: "[재고관리] 피킹 창고 보충에 따른 잔량 파렛트 차감",
+    note: "[재고관리] 피킹 창고 보충에 따른 잔량 파렛트 차감 (출고)",
   },
+  // 생산 완료 → 3층 풀파렛트 입고
   {
     id: "H-004",
     date: "2025-11-24",
@@ -78,17 +80,18 @@ const MOCK_HISTORY: HistoryRow[] = [
     qty: 24000,
     note: "[생산관리] 사출/블로우 생산완료 풀파렛트 입고",
   },
+  // 파손/불량 수동 조정 (출고로 처리)
   {
     id: "H-005",
     date: "2025-11-24",
     time: "14:10",
-    type: "조정",
+    type: "출고",
     warehouseLocation: "피킹 창고 / 1F-PK-03",
     productCode: "P-3001",
     productName: "PET 2L 투명",
     lotNo: "LOT-2025-010",
     qty: -20,
-    note: "[재고관리] 파손/불량에 따른 수동 재고 조정",
+    note: "[재고관리] 파손/불량에 따른 수동 재고 조정 (출고 처리)",
   },
 ];
 
@@ -99,6 +102,7 @@ export function StockHistoryView() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [keyword, setKeyword] = useState<string>(""); // ✅ 통합 검색어
+  const [typeFilter, setTypeFilter] = useState<"ALL" | "입고" | "출고">("ALL"); // ✅ 입고/출고 필터
 
   const handleDateChange =
     (setter: (v: string) => void) =>
@@ -128,6 +132,7 @@ export function StockHistoryView() {
     setDateFrom("");
     setDateTo("");
     setKeyword("");
+    setTypeFilter("ALL");
   };
 
   // ----------------------
@@ -145,6 +150,9 @@ export function StockHistoryView() {
       // 기간 필터
       if (dateFrom && row.date < dateFrom) return false;
       if (dateTo && row.date > dateTo) return false;
+
+      // 입고 / 출고 유형 필터
+      if (typeFilter !== "ALL" && row.type !== typeFilter) return false;
 
       // 통합 검색어 필터
       if (tokens.length > 0) {
@@ -171,7 +179,7 @@ export function StockHistoryView() {
       const bKey = `${b.date} ${b.time}`;
       return aKey < bKey ? 1 : -1; // 최신순
     });
-  }, [dateFrom, dateTo, keyword]);
+  }, [dateFrom, dateTo, keyword, typeFilter]);
 
   const totalIn = filteredRows
     .filter((r) => r.qty > 0)
@@ -191,10 +199,6 @@ export function StockHistoryView() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="text-sm font-semibold">입출고 히스토리 조회</div>
-            <div className="text-[11px] text-gray-500">
-              주문관리 · 재고관리 · 생산관리에서 발생한 모든 입출고 내역을
-              기간 / 통합 검색어 기준으로 조회합니다.
-            </div>
           </div>
           <div className="text-right text-[11px] text-gray-500">
             조회 건수:{" "}
@@ -279,13 +283,44 @@ export function StockHistoryView() {
             </div>
           </div>
 
-          <div className="text-[10px] text-gray-500">
-            · 공백으로 여러 키워드를 입력하면 AND 조건으로 필터됩니다. (예:
-            <span className="font-mono">
-              {" "}
-              P-1001 출고 LOT-2025 피킹
-            </span>
-            )
+          {/* 3행: 입고 / 출고 유형 필터 */}
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <div className="w-20 text-gray-600">유형</div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setTypeFilter("ALL")}
+                className={`rounded-full border px-3 py-0.5 ${
+                  typeFilter === "ALL"
+                    ? "border-gray-800 bg-gray-800 text-white"
+                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                전체
+              </button>
+              <button
+                type="button"
+                onClick={() => setTypeFilter("입고")}
+                className={`rounded-full border px-3 py-0.5 ${
+                  typeFilter === "입고"
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-blue-300 bg-white text-blue-700 hover:bg-blue-50"
+                }`}
+              >
+                입고
+              </button>
+              <button
+                type="button"
+                onClick={() => setTypeFilter("출고")}
+                className={`rounded-full border px-3 py-0.5 ${
+                  typeFilter === "출고"
+                    ? "border-red-600 bg-red-600 text-white"
+                    : "border-red-300 bg-white text-red-700 hover:bg-red-50"
+                }`}
+              >
+                출고
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -328,14 +363,8 @@ export function StockHistoryView() {
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] ${
                           row.type === "입고"
-                            ? "bg-blue-50 text-blue-700 border border-blue-200"
-                            : row.type === "출고"
-                            ? "bg-red-50 text-red-700 border border-red-200"
-                            : row.type === "보충"
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                            : row.type === "조정"
-                            ? "bg-amber-50 text-amber-700 border border-amber-200"
-                            : "bg-gray-50 text-gray-700 border border-gray-200"
+                            ? "border border-blue-200 bg-blue-50 text-blue-700"
+                            : "border border-red-200 bg-red-50 text-red-700"
                         }`}
                       >
                         {row.type}

@@ -185,7 +185,7 @@ export function RobotProductCallModal({
   const [rightChecked, setRightChecked] = useState<string[]>([]);
   const [selectedPallets, setSelectedPallets] = useState<Pallet[]>([]);
 
-   // 🔹 자동 검색용
+  // 🔹 자동 검색용
   const [selectedProduct, setSelectedProduct] = useState<{
     code: string;
     name: string;
@@ -206,7 +206,7 @@ export function RobotProductCallModal({
     );
   }, [searchTerm, hasSearched, selectedProduct]);
 
-    // 자동완성용 상품 리스트 (위 검색창 아래에 뜨는 리스트)
+  // 자동완성용 상품 리스트
   const productSuggestions = useMemo(() => {
     const q = searchTerm.trim();
     if (!q) return [];
@@ -247,7 +247,6 @@ export function RobotProductCallModal({
       map.set(p.productName, current);
     });
 
-    // [ [name, {box, ea}], ... ]
     return Array.from(map.entries());
   }, [selectedPallets]);
 
@@ -258,6 +257,8 @@ export function RobotProductCallModal({
     setLeftChecked([]);
     setRightChecked([]);
     setSelectedPallets([]);
+    setSelectedProduct(null);
+    setShowSuggestions(false);
   };
 
   // 모달이 닫힐 때마다 내부 상태 초기화
@@ -267,19 +268,15 @@ export function RobotProductCallModal({
     }
   }, [open]);
 
-    const onSearchClick = () => {
+  const onSearchClick = () => {
     setHasSearched(true);
     setLeftChecked([]);
 
     if (searchTerm.trim()) {
       const q = searchTerm.trim().toLowerCase();
       const found =
-        PRODUCT_MASTER.find((p) =>
-          p.code.toLowerCase().startsWith(q),
-        ) ??
-        PRODUCT_MASTER.find((p) =>
-          p.name.toLowerCase().includes(q),
-        );
+        PRODUCT_MASTER.find((p) => p.code.toLowerCase().startsWith(q)) ??
+        PRODUCT_MASTER.find((p) => p.name.toLowerCase().includes(q));
 
       setSelectedProduct(found ?? null);
     } else {
@@ -287,7 +284,6 @@ export function RobotProductCallModal({
     }
     setShowSuggestions(false);
   };
-
 
   // ▶ 좌측(검색결과) → 우측(전체 내역) 이동
   const moveToRight = () => {
@@ -397,7 +393,13 @@ export function RobotProductCallModal({
     onClose();
   };
 
-  // ✅ 모든 hook 호출 이후에만 open 체크
+  // 🔵 빈 파렛트 호출
+  const handleCallEmptyPallet = () => {
+    // TODO: 실제 AMR API 연동 지점
+    alert("빈 파렛트 AMR 호출을 전송했습니다. (데모)");
+  };
+
+  // ✅ 모든 hook 이후에 open 체크
   if (!open) return null;
 
   // ---------------------- JSX ----------------------
@@ -415,17 +417,32 @@ export function RobotProductCallModal({
                 </span>
               )}
             </h2>
+            <p className="mt-1 text-[11px] text-gray-500">
+              상품 기반으로 파렛트를 선택하거나, 빈 파렛트를 바로 호출할 수
+              있습니다.
+            </p>
           </div>
-          <button
-            type="button"
-            className="text-gray-400 hover:text-gray-600 text-lg"
-            onClick={() => {
-              resetState();
-              onClose();
-            }}
-          >
-            ×
-          </button>
+
+          {/* 오른쪽: 빈 파렛트 호출 + 닫기 */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCallEmptyPallet}
+              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+            >
+              빈 파렛트 호출
+            </button>
+            <button
+              type="button"
+              className="text-gray-400 hover:text-gray-600 text-lg"
+              onClick={() => {
+                resetState();
+                onClose();
+              }}
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         {/* 바디: 좌 / 우 패널 */}
@@ -464,7 +481,8 @@ export function RobotProductCallModal({
                   검색
                 </button>
               </div>
-                            {/* 자동완성 리스트 */}
+
+              {/* 자동완성 리스트 */}
               {showSuggestions && productSuggestions.length > 0 && (
                 <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px] shadow-sm">
                   {productSuggestions.map((p) => (
@@ -505,7 +523,6 @@ export function RobotProductCallModal({
                   </span>
                 )}
               </div>
-
             </div>
 
             <div className="flex-1 overflow-auto px-3 py-2">

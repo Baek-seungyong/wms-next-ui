@@ -35,7 +35,7 @@ export default function StockPage({ searchParams }: StockPageProps) {
     setActiveTab(initialTab);
   }, [initialTab]);
 
-  return (
+   return (
     <div className="flex min-h-screen flex-col gap-4">
       {/* 상단 제목 영역 */}
       <header className="rounded-2xl border bg-white px-6 py-4">
@@ -44,17 +44,11 @@ export default function StockPage({ searchParams }: StockPageProps) {
         </div>
       </header>
 
-      {/* ------------------------- */}
       {/* 탭별 내용 영역 */}
-      {/* ------------------------- */}
-      <main className="flex-1">
-        {/* ① 창고도면 재고현황 */}
+      {/* 🔹 여기 padding 추가 */}
+      <main className="flex-1 px-6 pb-6">
         {activeTab === "map" && <WarehouseMapView />}
-
-        {/* ② 창고별 입출고 관리 */}
         {activeTab === "io" && <WarehouseReplenishView />}
-
-        {/* ③ 입출고 히스토리 */}
         {activeTab === "history" && <StockHistoryView />}
       </main>
     </div>

@@ -1,3 +1,4 @@
+// components/ReceivingModal.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -19,6 +20,11 @@ type ProductMaster = {
   name: string;
 };
 
+type PalletMaster = {
+  id: string;
+  desc: string;
+};
+
 /** 🔹 예시용 상품 마스터 (자동완성에 사용) */
 const PRODUCT_MASTER: ProductMaster[] = [
   { code: "P-1001", name: "PET 500ml 투명" },
@@ -28,56 +34,88 @@ const PRODUCT_MASTER: ProductMaster[] = [
   { code: "L-5001", name: "라벨 500ml 화이트" },
 ];
 
-/** 🔹 예시 파렛트 목록 */
-const PALLET_MASTER: { id: string; desc: string }[] = [
+/** 🔹 예시 파렛트 목록 (파렛트 번호 자동완성용) */
+const PALLET_MASTER: PalletMaster[] = [
   { id: "PLT-1001", desc: "3층 플랫파렛트 A-01" },
   { id: "PLT-1002", desc: "3층 플랫파렛트 A-02" },
   { id: "PLT-2001", desc: "2층 잔량파렛트 B-01" },
   { id: "PLT-2002", desc: "2층 잔량파렛트 B-02" },
-  { id: "PLT-3001", desc: "1층 입고 대기존 P-01" },
+  { id: "PLT-3001", desc: "1층 출고 대기존 S-01" },
 ];
 
 export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
-  const [palletQR, setPalletQR] = useState("");
-  const [searchText, setSearchText] = useState("");
-  const [items, setItems] = useState<ReceivingItem[]>([]);
-  const [targetLocation, setTargetLocation] = useState<"피킹" | "2-1" | "3-1">(
+  /** 🔹 공통: 활성 탭 (입고 / 출고) */
+  const [activeTab, setActiveTab] = useState<"IN" | "OUT">("IN");
+
+  // ----------------- 입고 탭 상태 -----------------
+  const [palletQRIn, setPalletQRIn] = useState("");
+  const [selectedPalletIn, setSelectedPalletIn] =
+    useState<PalletMaster | null>(null);
+  const [showPalletSuggestionsIn, setShowPalletSuggestionsIn] = useState(false); // ⭐ 추가
+  const [searchTextIn, setSearchTextIn] = useState("");
+  const [itemsIn, setItemsIn] = useState<ReceivingItem[]>([]);
+  const [targetLocationIn, setTargetLocationIn] = useState<"피킹" | "2-1" | "3-1">(
     "피킹",
   );
-  const [selectedProduct, setSelectedProduct] = useState<ProductMaster | null>(
-    null,
-  );
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedProductIn, setSelectedProductIn] =
+    useState<ProductMaster | null>(null);
+  const [showSuggestionsIn, setShowSuggestionsIn] = useState(false);
 
-  /** 🔹 모달 닫힐 때 내부 상태 전체 초기화 */
+  // ----------------- 출고 탭 상태 -----------------
+  const [palletQROut, setPalletQROut] = useState("");
+  const [selectedPalletOut, setSelectedPalletOut] =
+    useState<PalletMaster | null>(null);
+  const [showPalletSuggestionsOut, setShowPalletSuggestionsOut] = useState(false); // ⭐ 추가
+  const [itemsOut, setItemsOut] = useState<ReceivingItem[]>([]);
+  const [targetLocationOut, setTargetLocationOut] =
+    useState<"피킹" | "2-1" | "3-1">("피킹");
+
+  // ----------------- 공통 초기화 -----------------
+  const resetAll = () => {
+    setActiveTab("IN");
+    // 입고
+    setPalletQRIn("");
+    setSelectedPalletIn(null);
+    setSearchTextIn("");
+    setItemsIn([]);
+    setTargetLocationIn("피킹");
+    setSelectedProductIn(null);
+    setShowSuggestionsIn(false);
+    setShowPalletSuggestionsIn(false);
+    // 출고
+    setPalletQROut("");
+    setSelectedPalletOut(null);
+    setItemsOut([]);
+    setTargetLocationOut("피킹");
+    setShowPalletSuggestionsOut(false);
+  };
+
+  /** 🔹 모달 닫힐 때 내부 상태 초기화 */
   useEffect(() => {
     if (!open) {
-      setPalletQR("");
-      setSearchText("");
-      setItems([]);
-      setTargetLocation("피킹");
-      setSelectedProduct(null);
-      setShowSuggestions(false);
+      resetAll();
     }
   }, [open]);
 
-  /** 🔹 검색어 기준 상품 자동완성 리스트 */
-  const productSuggestions = useMemo(() => {
-    const q = searchText.trim();
+  /** 🔹 입고: 검색어 기준 상품 자동완성 리스트 */
+  const productSuggestionsIn = useMemo(() => {
+    const q = searchTextIn.trim();
     if (!q) return [];
     const upper = q.toUpperCase();
     const lower = q.toLowerCase();
-
     return PRODUCT_MASTER.filter(
       (p) =>
         p.code.toUpperCase().includes(upper) ||
         p.name.toLowerCase().includes(lower),
     );
-  }, [searchText]);
+  }, [searchTextIn]);
 
-  /** 🔹 파렛트 번호 자동완성 리스트 */
-  const palletSuggestions = useMemo(() => {
-    const q = palletQR.trim();
+  /** 🔹 입고: 파렛트 자동완성 리스트 */
+  const palletSuggestionsIn = useMemo(() => {
+    // ✅ 이미 선택된 파렛트가 있으면 자동완성 리스트는 아예 안 만듦
+    if (selectedPalletIn) return [];
+
+    const q = palletQRIn.trim();
     if (!q) return [];
     const upper = q.toUpperCase();
 
@@ -86,78 +124,68 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
         p.id.toUpperCase().includes(upper) ||
         p.desc.toLowerCase().includes(q.toLowerCase()),
     );
-  }, [palletQR]);
+  }, [palletQRIn, selectedPalletIn]);   // ✅ deps 에 selectedPalletIn 추가
+
+
+
+  /** 🔹 출고: 파렛트 자동완성 리스트 (출고 탭도 동일 사용) */
+  const palletSuggestionsOut = useMemo(() => {
+    if (selectedPalletOut) return [];
+
+    const q = palletQROut.trim();
+    if (!q) return [];
+    const upper = q.toUpperCase();
+
+    return PALLET_MASTER.filter(
+      (p) =>
+        p.id.toUpperCase().includes(upper) ||
+        p.desc.toLowerCase().includes(q.toLowerCase()),
+    );
+  }, [palletQROut, selectedPalletOut]);
+
 
   if (!open) return null;
 
-  /** 🔹 입고 품목 목록에 한 줄 추가 */
-  const handleAddItem = (productFromSuggestion?: ProductMaster) => {
-    const trimmed = searchText.trim();
+  // ----------------- 입고 탭 로직 -----------------
+  const handleAddItemIn = () => {
+    if (!searchTextIn.trim() && !selectedProductIn) return;
 
-    // 1) 자동완성에서 클릭한 상품이 넘어온 경우 최우선
-    let base:
-      | ProductMaster
-      | {
-          code: string;
-          name: string;
-        }
-      | null = null;
-
-    if (productFromSuggestion) {
-      base = productFromSuggestion;
-    } else if (selectedProduct) {
-      // 2) 선택된 상품이 있는 경우
-      base = selectedProduct;
-    } else if (trimmed) {
-      // 3) 입력값으로 마스터 검색
-      const t = trimmed.toLowerCase();
-      base =
-        PRODUCT_MASTER.find(
-          (p) =>
-            p.code.toLowerCase() === t ||
-            p.code.toLowerCase().startsWith(t) ||
-            p.name.toLowerCase().includes(t),
-        ) ?? {
-          code: trimmed,
-          name: trimmed,
-        };
-    }
-
-    if (!base) return; // 아무 정보도 없으면 추가 안 함
+    const baseProduct =
+      selectedProductIn ??
+      PRODUCT_MASTER.find((p) => {
+        const t = searchTextIn.trim().toLowerCase();
+        return (
+          p.code.toLowerCase() === t ||
+          p.code.toLowerCase().startsWith(t) ||
+          p.name.toLowerCase().includes(t)
+        );
+      }) ?? {
+        code: searchTextIn.trim(),
+        name: searchTextIn.trim(),
+      };
 
     const newItem: ReceivingItem = {
       id: Date.now(),
-      code: base.code,
-      name: base.name,
+      code: baseProduct.code,
+      name: baseProduct.name,
       qty: 0,
     };
-
-    setItems((prev) => [...prev, newItem]);
-
-    // 입력창 정리
-    setSearchText("");
-    setShowSuggestions(false);
-
-    // 선택된 상품 표시용은 항상 최신 상품으로 유지
-    if (productFromSuggestion) {
-      setSelectedProduct(productFromSuggestion);
-    } else {
-      setSelectedProduct(
-        "code" in base && "name" in base ? { code: base.code, name: base.name } : null,
-      );
-    }
+    setItemsIn((prev) => [...prev, newItem]);
+    setSearchTextIn("");
+    setSelectedProductIn(null);
+    setShowSuggestionsIn(false);
   };
 
-  const handleChangeQty = (id: number, value: string) => {
-    const num = Number(value.replace(/[^0-9]/g, ""));
-    setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, qty: num || 0 } : it)),
+  const handleChangeQtyIn = (id: number, value: string) => {
+    const num = Number(value.replace(/[^0-9]/g, "")) || 0;
+    setItemsIn((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, qty: num } : it)),
     );
   };
 
-  const handleSubmit = () => {
-    const validItems = items.filter((it) => it.qty > 0);
-    if (!palletQR.trim()) {
+  const handleSubmitIn = () => {
+    const validItems = itemsIn.filter((it) => it.qty > 0);
+    if (!palletQRIn.trim()) {
       alert("파렛트 번호(QR)를 입력해주세요.");
       return;
     }
@@ -170,267 +198,611 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
       .map((it) => `${it.name}(${it.code}) ${it.qty}EA`)
       .join("\n");
 
+    const palletTextIn = selectedPalletIn
+      ? `${selectedPalletIn.id} (${selectedPalletIn.desc})`
+      : palletQRIn;
+
     alert(
       [
-        `입고 파렛트: ${palletQR}`,
-        `위치: ${targetLocation}`,
+        `[입고 지시]`,
+        `파렛트: ${palletTextIn}`,
+        `위치: ${targetLocationIn}`,
         "",
         "입고 품목:",
         summary,
       ].join("\n"),
     );
 
-    // 데모이므로 성공 후 폼 초기화
-    setItems([]);
-    setPalletQR("");
-    setTargetLocation("피킹");
-    setSelectedProduct(null);
-    setSearchText("");
-    setShowSuggestions(false);
+    resetAll();
     onClose();
   };
+
+  // ----------------- 출고 탭 로직 -----------------
+
+  /** 예시 데이터 불러오기 (실제 WMS 연동 시에는 QR 기준 파렛트 내역 조회) */
+  const handleLoadSampleOut = () => {
+    if (!palletQROut.trim()) {
+      alert("먼저 출고할 파렛트 번호(QR)를 입력해 주세요.");
+      return;
+    }
+    const now = Date.now();
+    setItemsOut([
+      {
+        id: now,
+        code: "P-1001",
+        name: "PET 500ml 투명",
+        qty: 0,
+      },
+      {
+        id: now + 1,
+        code: "C-2001",
+        name: "캡 28파이 화이트",
+        qty: 0,
+      },
+    ]);
+  };
+
+  const handleChangeQtyOut = (id: number, value: string) => {
+    const num = Number(value.replace(/[^0-9]/g, "")) || 0;
+    setItemsOut((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, qty: num } : it)),
+    );
+  };
+
+  const handleSubmitOut = () => {
+    const validItems = itemsOut.filter((it) => it.qty > 0);
+    if (!palletQROut.trim()) {
+      alert("출고할 파렛트 번호(QR)를 입력해주세요.");
+      return;
+    }
+    if (validItems.length === 0) {
+      alert("출고 수량이 입력된 품목이 없습니다.");
+      return;
+    }
+
+    const summary = validItems
+      .map((it) => `${it.name}(${it.code}) ${it.qty}EA`)
+      .join("\n");
+
+    const palletTextOut = selectedPalletOut
+      ? `${selectedPalletOut.id} (${selectedPalletOut.desc})`
+      : palletQROut;
+
+    alert(
+      [
+        `[출고 / 이송 지시]`,
+        `파렛트: ${palletTextOut}`,
+        `이동 위치: ${targetLocationOut}`,
+        "",
+        "출고 품목:",
+        summary,
+      ].join("\n"),
+    );
+
+    resetAll();
+    onClose();
+  };
+
+  // ----------------- 렌더링 -----------------
+
+  const isInTab = activeTab === "IN";
+
+  const locationLabel = isInTab ? "입고 위치" : "이동 / 반납 위치";
+  const locationValue = isInTab ? targetLocationIn : targetLocationOut;
+  const setLocation =
+    isInTab ? setTargetLocationIn : setTargetLocationOut;
+
+  const displayPalletIn = selectedPalletIn
+    ? `${selectedPalletIn.id} (${selectedPalletIn.desc})`
+    : palletQRIn || "미입력";
+
+  const displayPalletOut = selectedPalletOut
+    ? `${selectedPalletOut.id} (${selectedPalletOut.desc})`
+    : palletQROut || "미입력";
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl w-[960px] max-h-[90vh] flex flex-col">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 py-3 border-b">
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             <h2 className="text-base font-semibold">
-              재고 입고 · 파렛트 단위 입고 / 보충
+              재고 입고 · 파렛트 단위 입고 / 보충 · 출고
             </h2>
           </div>
           <button
             className="text-xs text-gray-500 hover:text-gray-800"
-            onClick={onClose}
+            onClick={() => {
+              resetAll();
+              onClose();
+            }}
           >
             닫기 ✕
           </button>
         </div>
 
-        {/* 본문 */}
-        <div className="flex-1 flex px-5 py-4 gap-4 overflow-hidden text-sm">
-          {/* 왼쪽: 입력 영역 */}
-          <div className="w-[58%] flex flex-col gap-4">
-            {/* 파렛트 번호 */}
-            <section className="space-y-1.5">
-              <h3 className="text-xs font-semibold text-gray-700">
-                파렛트번호 (QR코드)
-              </h3>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  placeholder="QR 스캔 또는 직접 입력 (예: PLT-1234)"
-                  value={palletQR}
-                  onChange={(e) => setPalletQR(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="px-3 py-2 rounded-md bg-gray-800 text-white text-xs"
-                >
-                  QR 스캔
-                </button>
-              </div>
-
-              {/* 🔽 파렛트 자동완성 리스트 */}
-              {palletSuggestions.length > 0 && (
-                <div className="mt-1 border rounded-md bg-white shadow p-2 max-h-40 overflow-auto text-xs">
-                  {palletSuggestions.map((p) => (
-                    <div
-                      key={p.id}
-                      onClick={() => setPalletQR(p.id)}
-                      className="px-2 py-1 hover:bg-gray-100 cursor-pointer"
-                    >
-                      <span className="font-mono font-semibold">{p.id}</span>
-                      <span className="ml-2 text-gray-600">{p.desc}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-            {/* 상품 조회 / 추가 */}
-            <section className="space-y-1.5">
-              <h3 className="text-xs font-semibold text-gray-700">제품 조회</h3>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  placeholder="제품 코드 또는 이름 (예: P-1001 / PET 500ml)"
-                  value={searchText}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setSearchText(v);
-                    setShowSuggestions(!!v);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="px-3 py-2 rounded-md bg-gray-800 text-white text-xs"
-                  onClick={() => handleAddItem()}
-                >
-                  추가
-                </button>
-              </div>
-
-              {/* 자동완성 리스트 */}
-              {showSuggestions && productSuggestions.length > 0 && (
-                <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px] shadow-sm">
-                  {productSuggestions.map((p) => (
-                    <button
-                      key={p.code}
-                      type="button"
-                      onClick={() => handleAddItem(p)}
-                      className="flex w-full items-center justify-between px-2 py-1 text-left hover:bg-gray-100"
-                    >
-                      <span className="font-mono">{p.code}</span>
-                      <span className="ml-2 text-gray-500">{p.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* 선택된 상품 표시 */}
-              <div className="mt-1 text-[11px] text-gray-600">
-                {selectedProduct ? (
-                  <>
-                    선택된 상품:&nbsp;
-                    <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 font-mono text-[11px] text-blue-700">
-                      {selectedProduct.code}
-                    </span>
-                    <span className="ml-1 text-gray-700">
-                      {selectedProduct.name}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-gray-400">
-                    선택된 상품이 없습니다. 위에서 상품을 선택하거나 추가해
-                    주세요.
-                  </span>
-                )}
-              </div>
-            </section>
-            {/* 추가된 상품 목록 */}
-            <section className="space-y-1.5 flex-1 min-h-[160px]">
-              <h3 className="text-xs font-semibold text-gray-700">
-                입고 품목 목록
-              </h3>
-              <div className="border rounded-lg overflow-hidden max-h-[260px]">
-                <table className="w-full text-xs">
-                  <thead className="bg-gray-50 text-gray-600">
-                    <tr>
-                      <th className="px-2 py-2 text-left w-28">상품코드</th>
-                      <th className="px-2 py-2 text-left">상품명</th>
-                      <th className="px-2 py-2 text-center w-28">
-                        입고수량(EA)
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.length === 0 ? (
-                      <tr>
-                        <td
-                          className="px-3 py-4 text-center text-gray-400 text-xs"
-                          colSpan={3}
-                        >
-                          아직 추가된 입고 품목이 없습니다.
-                        </td>
-                      </tr>
-                    ) : (
-                      items.map((it) => (
-                        <tr
-                          key={it.id}
-                          className="border-t hover:bg-gray-50 text-[11px]"
-                        >
-                          <td className="px-2 py-2 font-medium text-gray-800">
-                            {it.code}
-                          </td>
-                          <td className="px-2 py-2 text-gray-700">
-                            {it.name}
-                          </td>
-                          <td className="px-2 py-1 text-center">
-                            <input
-                              className="w-20 rounded-md border border-gray-300 px-2 py-1 text-xs text-right"
-                              value={it.qty || ""}
-                              onChange={(e) =>
-                                handleChangeQty(it.id, e.target.value)
-                              }
-                              placeholder="0"
-                            />
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            {/* 위치 지정 */}
-            <section className="space-y-1.5">
-              <h3 className="text-xs font-semibold text-gray-700">
-                입고 위치
-              </h3>
-              <div className="flex gap-3 text-xs text-gray-800">
-                {(["피킹", "2-1", "3-1"] as const).map((loc) => (
-                  <label key={loc} className="inline-flex items-center gap-1.5">
-                    <input
-                      type="radio"
-                      className="h-3 w-3"
-                      checked={targetLocation === loc}
-                      onChange={() => setTargetLocation(loc)}
-                    />
-                    <span>{loc}</span>
-                  </label>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          {/* 오른쪽: 간단 로그 / 설명 */}
-          <div className="w-[42%] flex flex-col border-l pl-4">
-            <h3 className="text-xs font-semibold text-gray-700 mb-2">
-              이번 입고 지시 미리보기
-            </h3>
-            <div className="flex-1 border rounded-lg bg-gray-50 px-3 py-2 overflow-auto text-[11px] text-gray-700 space-y-1">
-              <p>
-                파렛트:{" "}
-                <span className="font-semibold">{palletQR || "미입력"}</span>
-              </p>
-              <p>
-                위치: <span className="font-semibold">{targetLocation}</span>
-              </p>
-              <hr className="my-1" />
-              <p className="font-semibold mb-1">입고 품목</p>
-              {items.length === 0 ? (
-                <p className="text-gray-400">아직 추가된 품목이 없습니다.</p>
-              ) : (
-                items.map((it) => (
-                  <p key={it.id}>
-                    • {it.name}({it.code}){" "}
-                    <span className="font-semibold">{it.qty} EA</span>
-                  </p>
-                ))
-              )}
-            </div>
+        {/* 탭 */}
+        <div className="px-5 pt-3 border-b bg-gray-50">
+          <div className="inline-flex rounded-full bg-gray-100 p-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveTab("IN")}
+              className={`px-4 py-1 rounded-full ${
+                isInTab
+                  ? "bg-white shadow text-gray-900"
+                  : "text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              입고
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("OUT")}
+              className={`px-4 py-1 rounded-full ${
+                !isInTab
+                  ? "bg-white shadow text-gray-900"
+                  : "text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              출고
+            </button>
           </div>
         </div>
 
-        {/* 푸터 */}
+        {/* 본문 */}
+        {isInTab ? (
+          /* ===================== 입고 탭 ===================== */
+          <div className="flex-1 flex px-5 py-4 gap-4 overflow-hidden text-sm">
+            {/* 왼쪽: 입력 영역 */}
+            <div className="w-[58%] flex flex-col gap-4">
+              {/* 파렛트 번호 */}
+              <section className="space-y-1.5">
+                <h3 className="text-xs font-semibold text-gray-700">
+                  파렛트번호 (QR코드)
+                </h3>
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    placeholder="QR 스캔 또는 직접 입력 (예: PLT-1234)"
+                    value={palletQRIn}
+                    onChange={(e) => {
+                      setPalletQRIn(e.target.value);
+                      setSelectedPalletIn(null);
+                      setShowPalletSuggestionsIn(true);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md bg-gray-800 text-white text-xs"
+                  >
+                    QR 스캔
+                  </button>
+                </div>
+
+                {/* 파렛트 자동완성 리스트 (입고) */}
+                {!selectedPalletIn && palletSuggestionsIn.length > 0 && (
+                  <div className="mt-1 border rounded-md bg-white shadow p-2 max-h-32 overflow-auto text-xs">
+                    {palletSuggestionsIn.map((p) => (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          setPalletQRIn(p.id);
+                          setSelectedPalletIn(p);   // ✅ 선택 저장
+                        }}
+                        className="px-2 py-1 hover:bg-gray-100 cursor-pointer"
+                      >
+                        <span className="font-mono font-semibold">{p.id}</span>
+                        <span className="ml-2 text-gray-600">{p.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ✅ 선택된 파렛트 표시 */}
+                <div className="mt-1 text-[11px] text-gray-600">
+                  {selectedPalletIn ? (
+                    <>
+                      선택된 파렛트:&nbsp;
+                      <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-800 border border-slate-200">
+                        {selectedPalletIn.id}
+                      </span>
+                      <span className="ml-1 text-gray-700">
+                        {selectedPalletIn.desc}
+                      </span>
+                    </>
+                  ) : palletQRIn ? (
+                    <span className="text-gray-500">
+                      직접 입력한 파렛트 번호:{" "}
+                      <span className="font-mono font-semibold">
+                        {palletQRIn}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">
+                      선택된 파렛트가 없습니다.
+                    </span>
+                  )}
+                </div>
+              </section>
+
+              {/* 상품 조회 / 추가 */}
+              <section className="space-y-1.5">
+                <h3 className="text-xs font-semibold text-gray-700">
+                  제품 조회
+                </h3>
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    placeholder="제품 코드 또는 이름 (예: P-1001 / PET 500ml)"
+                    value={searchTextIn}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSearchTextIn(v);
+                      setSelectedProductIn(null);
+                      setShowSuggestionsIn(!!v);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md bg-gray-800 text-white text-xs"
+                    onClick={handleAddItemIn}
+                  >
+                    추가
+                  </button>
+                </div>
+
+                {/* 자동완성 리스트 */}
+                {showSuggestionsIn && productSuggestionsIn.length > 0 && (
+                  <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px] shadow-sm">
+                    {productSuggestionsIn.map((p) => (
+                      <button
+                        key={p.code}
+                        type="button"
+                        onClick={() => {
+                          setSearchTextIn(p.code);
+                          setSelectedProductIn(p);
+                          setShowSuggestionsIn(false);
+                          const newItem: ReceivingItem = {
+                            id: Date.now(),
+                            code: p.code,
+                            name: p.name,
+                            qty: 0,
+                          };
+                          setItemsIn((prev) => [...prev, newItem]);
+                        }}
+                        className="flex w-full items-center justify-between px-2 py-1 text-left hover:bg-gray-100"
+                      >
+                        <span className="font-mono">{p.code}</span>
+                        <span className="ml-2 text-gray-500">{p.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* 선택된 상품 표시 */}
+                <div className="mt-1 text-[11px] text-gray-600">
+                  {selectedProductIn ? (
+                    <>
+                      선택된 상품:&nbsp;
+                      <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 font-mono text-[11px] text-blue-700">
+                        {selectedProductIn.code}
+                      </span>
+                      <span className="ml-1 text-gray-700">
+                        {selectedProductIn.name}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400">
+                      선택된 상품이 없습니다.
+                    </span>
+                  )}
+                </div>
+              </section>
+
+              {/* 추가된 상품 목록 */}
+              <section className="space-y-1.5 flex-1 min-h-[160px]">
+                <h3 className="text-xs font-semibold text-gray-700">
+                  입고 품목 목록
+                </h3>
+                <div className="border rounded-lg overflow-hidden max-h-[260px]">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="px-2 py-2 text-left w-28">상품코드</th>
+                        <th className="px-2 py-2 text-left">상품명</th>
+                        <th className="px-2 py-2 text-center w-28">
+                          입고수량(EA)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {itemsIn.length === 0 ? (
+                        <tr>
+                          <td
+                            className="px-3 py-4 text-center text-gray-400 text-xs"
+                            colSpan={3}
+                          >
+                            아직 추가된 입고 품목이 없습니다.
+                          </td>
+                        </tr>
+                      ) : (
+                        itemsIn.map((it) => (
+                          <tr
+                            key={it.id}
+                            className="border-t hover:bg-gray-50 text-[11px]"
+                          >
+                            <td className="px-2 py-2 font-medium text-gray-800">
+                              {it.code}
+                            </td>
+                            <td className="px-2 py-2 text-gray-700">
+                              {it.name}
+                            </td>
+                            <td className="px-2 py-1 text-center">
+                              <input
+                                className="w-20 rounded-md border border-gray-300 px-2 py-1 text-xs text-right"
+                                value={it.qty || ""}
+                                onChange={(e) =>
+                                  handleChangeQtyIn(it.id, e.target.value)
+                                }
+                                placeholder="0"
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            {/* 오른쪽: 미리보기 */}
+            <div className="w-[42%] flex flex-col border-l pl-4">
+              <h3 className="text-xs font-semibold text-gray-700 mb-2">
+                이번 입고 지시 미리보기
+              </h3>
+              <div className="flex-1 border rounded-lg bg-gray-50 px-3 py-2 overflow-auto text-[11px] text-gray-700 space-y-1">
+                <p>
+                  파렛트:{" "}
+                  <span className="font-semibold">{displayPalletIn}</span>
+                </p>
+                <p>
+                  위치:{" "}
+                  <span className="font-semibold">{targetLocationIn}</span>
+                </p>
+                <hr className="my-1" />
+                <p className="font-semibold mb-1">입고 품목</p>
+                {itemsIn.length === 0 ? (
+                  <p className="text-gray-400">아직 추가된 품목이 없습니다.</p>
+                ) : (
+                  itemsIn.map((it) => (
+                    <p key={it.id}>
+                      • {it.name}({it.code}){" "}
+                      <span className="font-semibold">{it.qty} EA</span>
+                    </p>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* ===================== 출고 탭 ===================== */
+          <div className="flex-1 flex px-5 py-4 gap-4 overflow-hidden text-sm">
+            {/* 왼쪽: 출고 입력 */}
+            <div className="w-[58%] flex flex-col gap-4">
+              {/* 파렛트 번호 (출고) */}
+              <section className="space-y-1.5">
+                <h3 className="text-xs font-semibold text-gray-700">
+                  출고 파렛트번호 (QR코드)
+                </h3>
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    placeholder="QR 스캔 또는 직접 입력 (예: PLT-1234)"
+                    value={palletQROut}
+                    onChange={(e) => {
+                      setPalletQROut(e.target.value);
+                      setSelectedPalletOut(null);
+                      setShowPalletSuggestionsOut(true);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md bg-gray-800 text-white text-xs"
+                  >
+                    QR 스캔
+                  </button>
+                </div>
+
+                {/* 파렛트 자동완성 리스트 (출고) */}
+                {!selectedPalletOut && palletSuggestionsOut.length > 0 && (
+                  <div className="mt-1 border rounded-md bg-white shadow p-2 max-h-32 overflow-auto text-xs">
+                    {palletSuggestionsOut.map((p) => (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          setPalletQROut(p.id);
+                          setSelectedPalletOut(p);
+                        }}
+                        className="px-2 py-1 hover:bg-gray-100 cursor-pointer"
+                      >
+                        <span className="font-mono font-semibold">{p.id}</span>
+                        <span className="ml-2 text-gray-600">{p.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ✅ 선택된 파렛트 표시 (출고) */}
+                <div className="mt-1 text-[11px] text-gray-600">
+                  {selectedPalletOut ? (
+                    <>
+                      선택된 파렛트:&nbsp;
+                      <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-800 border border-slate-200">
+                        {selectedPalletOut.id}
+                      </span>
+                      <span className="ml-1 text-gray-700">
+                        {selectedPalletOut.desc}
+                      </span>
+                    </>
+                  ) : palletQROut ? (
+                    <span className="text-gray-500">
+                      직접 입력한 파렛트 번호:{" "}
+                      <span className="font-mono font-semibold">
+                        {palletQROut}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">
+                      선택된 파렛트가 없습니다.
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className="mt-2 px-3 py-1.5 rounded-full bg-slate-700 text-xs text-white hover:bg-slate-800"
+                  onClick={handleLoadSampleOut}
+                >
+                  예시 데이터 불러오기
+                </button>
+              </section>
+
+              {/* 출고 품목 목록 */}
+              <section className="space-y-1.5 flex-1 min-h-[160px]">
+                <h3 className="text-xs font-semibold text-gray-700">
+                  출고 품목 목록
+                </h3>
+                <div className="border rounded-lg overflow-hidden max-h-[260px]">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="px-2 py-2 text-left w-28">상품코드</th>
+                        <th className="px-2 py-2 text-left">상품명</th>
+                        <th className="px-2 py-2 text-center w-28">
+                          출고수량(EA)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {itemsOut.length === 0 ? (
+                        <tr>
+                          <td
+                            className="px-3 py-4 text-center text-gray-400 text-xs"
+                            colSpan={3}
+                          >
+                            아직 불러온 출고 품목이 없습니다.
+                          </td>
+                        </tr>
+                      ) : (
+                        itemsOut.map((it) => (
+                          <tr
+                            key={it.id}
+                            className="border-t hover:bg-gray-50 text-[11px]"
+                          >
+                            <td className="px-2 py-2 font-medium text-gray-800">
+                              {it.code}
+                            </td>
+                            <td className="px-2 py-2 text-gray-700">
+                              {it.name}
+                            </td>
+                            <td className="px-2 py-1 text-center">
+                              <input
+                                className="w-20 rounded-md border border-gray-300 px-2 py-1 text-xs text-right"
+                                value={it.qty || ""}
+                                onChange={(e) =>
+                                  handleChangeQtyOut(it.id, e.target.value)
+                                }
+                                placeholder="0"
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            {/* 오른쪽: 출고 미리보기 */}
+            <div className="w-[42%] flex flex-col border-l pl-4">
+              <h3 className="text-xs font-semibold text-gray-700 mb-2">
+                이번 출고 / 이송 지시 미리보기
+              </h3>
+              <div className="flex-1 border rounded-lg bg-gray-50 px-3 py-2 overflow-auto text-[11px] text-gray-700 space-y-1">
+                <p>
+                  출고 파렛트:{" "}
+                  <span className="font-semibold">{displayPalletOut}</span>
+                </p>
+                <p>
+                  이동 위치:{" "}
+                  <span className="font-semibold">
+                    {targetLocationOut}
+                  </span>
+                </p>
+                <hr className="my-1" />
+                <p className="font-semibold mb-1">출고 품목</p>
+                {itemsOut.length === 0 ? (
+                  <p className="text-gray-400">
+                    아직 추가된 출고 품목이 없습니다.
+                  </p>
+                ) : (
+                  itemsOut.map((it) => (
+                    <p key={it.id}>
+                      • {it.name}({it.code}){" "}
+                      <span className="font-semibold">{it.qty} EA</span>
+                    </p>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 푸터: 위치 선택 + 버튼 */}
         <div className="flex items-center justify-between px-5 py-3 border-t bg-gray-50">
-          <p className="text-[11px] text-gray-500">
-          </p>
+          {/* 위치 선택 */}
+          <div className="flex items-center gap-3 text-xs text-gray-800">
+            <span className="font-semibold">{locationLabel}</span>
+            {(["피킹", "2-1", "3-1"] as const).map((loc) => (
+              <label key={loc} className="inline-flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  className="h-3 w-3"
+                  checked={locationValue === loc}
+                  onChange={() => setLocation(loc)}
+                />
+                <span>{loc}</span>
+              </label>
+            ))}
+          </div>
+
           <div className="flex gap-2">
             <button
               className="px-3 py-1.5 rounded-full bg-white border border-gray-300 text-xs text-gray-700 hover:bg-gray-100"
-              onClick={onClose}
+              onClick={() => {
+                resetAll();
+                onClose();
+              }}
             >
               취소
             </button>
-            <button
-              className="px-4 py-1.5 rounded-full bg-blue-600 text-white text-xs hover:bg-blue-700"
-              onClick={handleSubmit}
-            >
-              입고 / 이송 지시
-            </button>
+            {isInTab ? (
+              <button
+                className="px-4 py-1.5 rounded-full bg-blue-600 text-white text-xs hover:bg-blue-700"
+                onClick={handleSubmitIn}
+              >
+                입고 / 이송 지시
+              </button>
+            ) : (
+              <button
+                className="px-4 py-1.5 rounded-full bg-blue-600 text-white text-xs hover:bg-blue-700"
+                onClick={handleSubmitOut}
+              >
+                이송 지시 (출고)
+              </button>
+            )}
           </div>
         </div>
       </div>

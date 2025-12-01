@@ -12,6 +12,15 @@ import {
   type ReplenishMark,
 } from "@/utils/replenishMarkStore";
 
+// 🔹 상품별 이미지 경로 매핑 (예시)
+//   실제 파일은 public/images/products 폴더 아래에 넣어두면 됨.
+const PRODUCT_IMAGE_MAP: Record<string, { main: string }> = {
+  "P-001": { main: "/images/products/P-001.png" },
+  "P-013": { main: "/images/products/P-013.png" },
+  "C-201": { main: "/images/products/C-201.png" },
+  "L-009": { main: "/images/products/L-009.png" },
+};
+
 type Props = {
   order: Order | null;
   items: OrderItem[];
@@ -61,13 +70,12 @@ export function OrderDetail({
   const [amrRouteMap, setAmrRouteMap] = useState<Record<string, string>>({});
 
   // 🔹 행별 위치 상태 (창고 / 입고중 / 작업중 / 출고중)
-  // 기본값을 SAMPLE로 4개 상태가 1개씩 나오도록 설정
   const [locationMap, setLocationMap] = useState<Record<string, LocationStatus>>(
     {
-      "P-001": "창고", // 1번 : 창고
-      "P-013": "입고중", // 2번 : 입고중
-      "C-201": "작업중", // 3번 : 작업중
-      "L-009": "출고중", // 4번 : 출고중
+      "P-001": "창고",
+      "P-013": "입고중",
+      "C-201": "작업중",
+      "L-009": "출고중",
     },
   );
 
@@ -75,7 +83,6 @@ export function OrderDetail({
   const [markedList, setMarkedList] = useState<ReplenishMark[]>([]);
 
   useEffect(() => {
-    // 처음 로딩 시 localStorage에 저장된 마킹 불러오기
     setMarkedList(getReplenishMarks());
   }, []);
 
@@ -95,11 +102,27 @@ export function OrderDetail({
     route: string;
   } | null>(null);
 
+  // 🔹 상품 이미지 모달 상태
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [imageModalCode, setImageModalCode] = useState<string | null>(null);
+
   const handleClickComplete = () => {
     if (onComplete) {
       onComplete(items); // 🔹 선택된 주문의 아이템 목록을 넘겨줌
     }
   };
+
+  const currentImageInfo =
+    imageModalCode && PRODUCT_IMAGE_MAP[imageModalCode]
+      ? PRODUCT_IMAGE_MAP[imageModalCode]
+      : null;
+
+  const currentImageItem =
+    imageModalCode &&
+    (items.find(
+      (it) =>
+        ((it as any).code ?? (it as any).itemCode ?? "") === imageModalCode,
+    ) as any | undefined);
 
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
@@ -163,7 +186,7 @@ export function OrderDetail({
               <th className="border-b px-3 py-2 text-center">AMR 호출</th>
               <th className="border-b px-3 py-2 text-center">위치</th>
               {/* 🔹 맨 오른쪽에 마킹 컬럼 */}
-              <th className="border-b px-3 py-2 text-center">마킹</th>
+              <th className="border-b px-3 py-2 text-center">재고부족</th>
             </tr>
           </thead>
           <tbody>
@@ -176,14 +199,32 @@ export function OrderDetail({
 
               const location: LocationStatus = locationMap[key] ?? "창고";
               const marked = isProductMarked(key);
+              const hasImage = !!PRODUCT_IMAGE_MAP[key];
 
               return (
                 <tr key={key} className="bg-white">
+                  {/* 상품코드 */}
                   <td className="border-t px-3 py-2 font-mono text-[12px]">
                     {key}
                   </td>
+
+                  {/* 상품명 + 이미지 버튼 */}
                   <td className="border-t px-3 py-2 text-[12px]">
-                    {(it as any).name}
+                    <div className="flex items-center gap-2">
+                      <span>{(it as any).name}</span>
+                      {hasImage && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImageModalCode(key);
+                            setImageModalOpen(true);
+                          }}
+                          className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] text-gray-600 hover:bg-gray-100"
+                        >
+                          이미지
+                        </button>
+                      )}
+                    </div>
                   </td>
 
                   {/* 주문수량 */}
@@ -279,7 +320,11 @@ export function OrderDetail({
                             ? "border-amber-400 bg-amber-50 text-amber-700"
                             : "border-gray-300 bg-white text-gray-500 hover:bg-gray-50"
                         }`}
-                      title={marked ? "마킹 해제" : "나중에 재고 보충이 필요하면 눌러두세요"}
+                      title={
+                        marked
+                          ? "마킹 해제"
+                          : "나중에 재고 보충이 필요하면 눌러두세요"
+                      }
                     >
                       <span className="text-[13px] leading-none">
                         {marked ? "★" : "☆"}
@@ -327,6 +372,49 @@ export function OrderDetail({
         productName={transferTarget?.name}
         fromLocation={transferTarget?.route}
       />
+
+      {/* 🔹 상품 이미지 모달 */}
+      {imageModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[520px] max-w-[90vw] rounded-2xl bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-sm font-semibold">
+                상품 이미지 확인
+              </div>
+              <button
+                className="text-xs text-gray-500 hover:text-gray-800"
+                onClick={() => setImageModalOpen(false)}
+              >
+                닫기 ✕
+              </button>
+            </div>
+
+            {currentImageInfo ? (
+              <div className="space-y-3">
+                <div className="flex justify-center">
+                  <img
+                    src={currentImageInfo.main}
+                    alt={currentImageItem?.name ?? imageModalCode ?? "상품 이미지"}
+                    className="max-h-[360px] w-full rounded-lg border border-gray-200 bg-white object-contain"
+                  />
+                </div>
+                <div className="text-center text-[12px] text-gray-700">
+                  {currentImageItem?.name ?? "상품명 미등록"}{" "}
+                  {imageModalCode && (
+                    <span className="font-mono text-gray-500">
+                      ({imageModalCode})
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-center text-[12px] text-gray-500">
+                등록된 이미지가 없습니다.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
