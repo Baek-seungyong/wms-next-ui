@@ -7,90 +7,32 @@ import { OrderList } from "./OrderList";
 import { OrderDetail } from "./OrderDetail";
 import { RobotProductCallModal } from "./RobotProductCallModal";
 
+// 🔹 상품별 이미지 매핑 (실제 파일명에 맞게 수정해서 사용)
+const PRODUCT_IMAGE_MAP: Record<string, string> = {
+  "P-001": "/images/products/P-001.png",
+  "P-013": "/images/products/P-013.png",
+  "C-201": "/images/products/C-201.png",
+  "L-009": "/images/products/L-009.png",
+};
+
 // 기본 주문 데이터
 const baseOrders: Order[] = [
-  {
-    id: "ORD-251114-01",
-    customer: "온라인몰 A",
-    dueDate: "2025-11-15",
-    status: "대기",
-    zone: "수도권",
-  },
-  {
-    id: "ORD-251114-02",
-    customer: "B몰",
-    dueDate: "2025-11-15",
-    status: "보류",
-    zone: "비수도권",
-  },
-  {
-    id: "ORD-251114-03",
-    customer: "C도매",
-    dueDate: "2025-11-16",
-    status: "출고중",
-    zone: "수도권",
-  },
-  {
-    id: "ORD-251113-11",
-    customer: "D연구소",
-    dueDate: "2025-11-20",
-    status: "완료",
-    zone: "차량출고",
-  },
-  {
-    id: "ORD-251115-01",
-    customer: "온라인몰 B",
-    dueDate: "2025-11-17",
-    status: "대기",
-    zone: "수도권",
-  },
-  {
-    id: "ORD-251115-02",
-    customer: "E도매",
-    dueDate: "2025-11-17",
-    status: "출고중",
-    zone: "비수도권",
-  },
-  {
-    id: "ORD-251115-03",
-    customer: "F식자재",
-    dueDate: "2025-11-18",
-    status: "보류",
-    zone: "차량출고",
-  },
-  {
-    id: "ORD-251116-01",
-    customer: "온라인몰 C",
-    dueDate: "2025-11-18",
-    status: "대기",
-    zone: "수도권",
-  },
-  {
-    id: "ORD-251116-02",
-    customer: "G도매",
-    dueDate: "2025-11-19",
-    status: "완료",
-    zone: "비수도권",
-  },
-  {
-    id: "ORD-251116-03",
-    customer: "H연구소",
-    dueDate: "2025-11-19",
-    status: "출고중",
-    zone: "차량출고",
-  },
+  { id: "ORD-251114-01", customer: "온라인몰 A", dueDate: "2025-11-15", status: "대기", zone: "수도권" },
+  { id: "ORD-251114-02", customer: "B몰",       dueDate: "2025-11-15", status: "보류", zone: "비수도권" },
+  { id: "ORD-251114-03", customer: "C도매",     dueDate: "2025-11-16", status: "출고중", zone: "수도권" },
+  { id: "ORD-251113-11", customer: "D연구소",   dueDate: "2025-11-20", status: "완료", zone: "차량출고" },
+  { id: "ORD-251115-01", customer: "온라인몰 B", dueDate: "2025-11-17", status: "대기", zone: "수도권" },
+  { id: "ORD-251115-02", customer: "E도매",     dueDate: "2025-11-17", status: "출고중", zone: "비수도권" },
+  { id: "ORD-251115-03", customer: "F식자재",   dueDate: "2025-11-18", status: "보류", zone: "차량출고" },
+  { id: "ORD-251116-01", customer: "온라인몰 C", dueDate: "2025-11-18", status: "대기", zone: "수도권" },
+  { id: "ORD-251116-02", customer: "G도매",     dueDate: "2025-11-19", status: "완료", zone: "비수도권" },
+  { id: "ORD-251116-03", customer: "H연구소",   dueDate: "2025-11-19", status: "출고중", zone: "차량출고" },
 ];
 
 // 기본 품목 데이터
 const baseItems: OrderItem[] = [
-  { code: "P-001", name: "PET 500ml 투명", orderQty: 100, stockQty: 150 },
-  {
-    code: "P-013",
-    name: "PET 1L 반투명",
-    orderQty: 50,
-    stockQty: 20,
-    lowStock: true,
-  },
+  { code: "P-001", name: "PET 500ml 투명",   orderQty: 100, stockQty: 150 },
+  { code: "P-013", name: "PET 1L 반투명",   orderQty: 50,  stockQty: 20,  lowStock: true },
   { code: "C-201", name: "캡 28파이 화이트", orderQty: 100, stockQty: 500 },
   { code: "L-009", name: "라벨 500ml 화이트", orderQty: 100, stockQty: 80 },
 ];
@@ -116,90 +58,100 @@ export default function OrderManagement() {
     orders[0]?.id ?? "",
   );
 
-  // 🔸 주문관리 전용: 긴급 호출 모달 상태 (수동 호출은 상단 공통 버튼에서 관리)
+  // 🔸 긴급 호출 모달
   const [robotModalOpen, setRobotModalOpen] = useState(false);
+
+  // 🔸 오른쪽 상품 이미지 프리뷰용 상태
+  const [previewProduct, setPreviewProduct] = useState<{
+    code: string;
+    name: string;
+  } | null>(null);
 
   const activeOrder = useMemo(
     () => orders.find((o) => o.id === activeOrderId) ?? orders[0],
     [orders, activeOrderId],
   );
-
   const activeItems = itemsByOrderId[activeOrder?.id ?? ""] ?? [];
 
-  // 공통: 주문 상태 변경
+  // 상태 변경
   const updateOrderStatus = (orderId: string, status: OrderStatus) => {
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status } : o)),
     );
   };
 
-  // 주문 선택 시: 대기 → 출고중
+  // 주문 선택 시
   const handleSelectOrder = (id: string) => {
     setActiveOrderId(id);
     setOrders((prev) =>
       prev.map((o) =>
         o.id === id
-          ? {
-              ...o,
-              status: o.status === "대기" ? "출고중" : o.status,
-            }
+          ? { ...o, status: o.status === "대기" ? "출고중" : o.status }
           : o,
       ),
     );
+
+    // 주문 바꾸면 첫 번째 품목으로 프리뷰 초기화
+    const firstItem = itemsByOrderId[id]?.[0];
+    if (firstItem) {
+      setPreviewProduct({ code: firstItem.code, name: firstItem.name });
+    }
   };
 
-  // ✅ 긴급 호출 버튼에서 모달 열기 (긴급 모드 전용)
+  // 긴급 호출 모달 열기
   const openEmergencyModal = () => {
     setRobotModalOpen(true);
   };
 
-  // ✅ 긴급호출에서 긴급출고 주문 생성
-  // RobotProductCallModal 의 onConfirmEmergency 에 연결
+  // 긴급 출고 주문 생성
   const handleCreateEmergencyOrder = (
     products: { code: string; name: string }[],
   ) => {
     if (products.length === 0) return;
 
     const newId = `EMG-${Date.now()}`;
-
-    // 왼쪽 주문서 목록에 표시할 이름
     const displayName =
       products.length === 1 ? products[0].name : `${products[0].name} 외`;
 
     const emergencyOrder: Order = {
       id: newId,
-      customer: displayName, // 고객명 칸
+      customer: displayName,
       dueDate: "긴급",
       status: "출고중",
       zone: "수도권",
-      isEmergency: true, // 긴급출고 플래그
+      isEmergency: true,
     };
 
-    // 오른쪽 상세에 나올 품목들
     const emergencyItems: OrderItem[] = products.map((p, idx) => ({
       code: `EMG-${(idx + 1).toString().padStart(3, "0")}`,
       name: p.name,
-      orderQty: 0, // 수량은 상세 화면에서 직접 입력
+      orderQty: 0,
       stockQty: 0,
     }));
 
     setOrders((prev) => [emergencyOrder, ...prev]);
-    setItemsByOrderId((prev) => ({
-      ...prev,
-      [newId]: emergencyItems,
-    }));
+    setItemsByOrderId((prev) => ({ ...prev, [newId]: emergencyItems }));
     setActiveOrderId(newId);
+
+    if (emergencyItems[0]) {
+      setPreviewProduct({
+        code: emergencyItems[0].code,
+        name: emergencyItems[0].name,
+      });
+    }
   };
 
-  // 출고 완료 버튼 눌렀을 때 (일반 주문 + 긴급출고 모두 공통)
+  // 출고 완료
   const handleCompleteOrder = (newItems: OrderItem[]) => {
     const orderId = activeOrder.id;
-    setItemsByOrderId((prev) => ({
-      ...prev,
-      [orderId]: newItems,
-    }));
+    setItemsByOrderId((prev) => ({ ...prev, [orderId]: newItems }));
     updateOrderStatus(orderId, "완료");
   };
+
+  // 현재 보여줄 이미지 경로
+  const previewImageSrc = previewProduct
+    ? PRODUCT_IMAGE_MAP[previewProduct.code] ?? "/images/products/no-image.png"
+    : null;
 
   return (
     <div className="space-y-4">
@@ -207,24 +159,18 @@ export default function OrderManagement() {
       <div className="shadow-sm border border-gray-200 rounded-2xl bg-white">
         <div className="p-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-base">
-                출고 WMS · 출고 작업 지시 (피킹라인 기준)
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <select
-                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
-                disabled
-              >
-                <option>출고위치: 2층 피킹라인</option>
-              </select>
-            </div>
+            <span className="font-semibold text-base">
+              출고 WMS · 출고 작업 지시 (피킹라인 기준)
+            </span>
+            <select
+              className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+              disabled
+            >
+              <option>출고위치: 2층 피킹라인</option>
+            </select>
           </div>
 
-          {/* 오른쪽 버튼 영역 */}
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            {/* 🚨 긴급 호출 : 긴급 모드로 모달 오픈 (긴급 출고용 주문 생성) */}
             <button
               type="button"
               className="text-xs px-3 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white"
@@ -232,12 +178,11 @@ export default function OrderManagement() {
             >
               🚨 긴급 호출
             </button>
-            {/* ⚠️ AMR 수동 호출 / 파렛트 입출고는 상단 공통 메뉴(검정바)에서 사용 */}
           </div>
         </div>
       </div>
 
-      {/* 본문 영역 : 주문서 목록 + 주문 상세 */}
+      {/* 본문 영역 : 주문서 목록 + 주문 상세 + 우측 이미지 프리뷰 */}
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-4">
           <OrderList
@@ -246,7 +191,9 @@ export default function OrderManagement() {
             onSelectOrder={handleSelectOrder}
           />
         </div>
-        <div className="col-span-8">
+
+        {/* 가운데: 주문 상세 */}
+        <div className="col-span-5">
           <OrderDetail
             order={activeOrder}
             items={activeItems}
@@ -254,11 +201,47 @@ export default function OrderManagement() {
               updateOrderStatus(activeOrder.id, status)
             }
             onComplete={handleCompleteOrder}
+            onSelectItemForPreview={(item) =>
+              setPreviewProduct({ code: item.code, name: item.name })
+            }
           />
+        </div>
+
+        {/* 오른쪽: 상품 이미지 프리뷰 */}
+        <div className="col-span-3">
+          <section className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
+            <h2 className="text-base font-semibold">상품 이미지 프리뷰</h2>
+
+            {previewProduct ? (
+              <>
+                <div className="mt-1 text-[11px] text-gray-500">
+                  {previewProduct.name}
+                </div>
+                <div className="text-[11px] text-gray-400">
+                  코드: {previewProduct.code}
+                </div>
+
+                {/* 🔹 여기 박스 높이를 넉넉하게 주고 이미지가 꽉 차도록 */}
+                <div className="mt-4 flex-1">
+                  <div className="flex h-[520px] w-full items-center justify-center rounded-2xl border bg-gray-50">
+                    <img
+                      src={`/images/products/${previewProduct.code}.png`}
+                      alt={previewProduct.name}
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 flex-1 rounded-2xl border bg-gray-50 p-4 text-[12px] text-gray-400">
+                왼쪽 주문 상세에서 상품을 선택하면 이미지가 표시됩니다.
+              </div>
+            )}
+          </section>
         </div>
       </div>
 
-      {/* 🔴 주문관리 전용 긴급 호출 모달 (mode="emergency") */}
+      {/* 긴급 호출 모달 */}
       <RobotProductCallModal
         open={robotModalOpen}
         mode="emergency"

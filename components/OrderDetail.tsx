@@ -12,21 +12,13 @@ import {
   type ReplenishMark,
 } from "@/utils/replenishMarkStore";
 
-// 🔹 상품별 이미지 경로 매핑 (예시)
-//   실제 파일은 public/images/products 폴더 아래에 넣어두면 됨.
-const PRODUCT_IMAGE_MAP: Record<string, { main: string }> = {
-  "P-001": { main: "/images/products/P-001.png" },
-  "P-013": { main: "/images/products/P-013.png" },
-  "C-201": { main: "/images/products/C-201.png" },
-  "L-009": { main: "/images/products/L-009.png" },
-};
-
 type Props = {
   order: Order | null;
   items: OrderItem[];
   onChangeStatus?: (status: OrderStatus) => void;
-  // 🔹 page.tsx의 handleCompleteOrder(newItems: OrderItem[]) 와 맞추기
   onComplete?: (newItems: OrderItem[]) => void;
+  // 👉 행 클릭 시 부모에서 이미지 프리뷰 띄우기 위한 콜백
+  onSelectItemForPreview?: (item: OrderItem) => void;
 };
 
 type LocationStatus = "창고" | "입고중" | "작업중" | "출고중";
@@ -51,6 +43,7 @@ export function OrderDetail({
   items,
   onChangeStatus,
   onComplete,
+  onSelectItemForPreview,
 }: Props): ReactElement | null {
   if (!order) {
     return (
@@ -60,16 +53,26 @@ export function OrderDetail({
     );
   }
 
+  // 🚩 주문이 바뀔 때 첫 번째 품목을 자동으로 프리뷰로 보내줌
+  useEffect(() => {
+    if (!onSelectItemForPreview) return;
+    if (items.length === 0) return;
+
+    // 주문이 바뀌어서 items 배열이 바뀔 때만
+    // 첫 번째 품목을 기본 프리뷰로 보내준다.
+    onSelectItemForPreview(items[0]);
+  }, [items]); // ❗ onSelectItemForPreview는 의존성에서 제거
+
   // 피킹창고 부족 여부
   const hasLowStock = useMemo(
     () => items.some((i) => (i as any).lowStock),
     [items],
   );
 
-  // 🔹 행별 AMR 출발 위치 (피킹 / 2-1 / 3-1 등) 저장
+  // AMR 출발 위치
   const [amrRouteMap, setAmrRouteMap] = useState<Record<string, string>>({});
 
-  // 🔹 행별 위치 상태 (창고 / 입고중 / 작업중 / 출고중)
+  // 행별 위치 상태
   const [locationMap, setLocationMap] = useState<Record<string, LocationStatus>>(
     {
       "P-001": "창고",
@@ -79,7 +82,7 @@ export function OrderDetail({
     },
   );
 
-  // 🔹 보충 마킹 상태 (localStorage 연동)
+  // 보충 마킹 상태
   const [markedList, setMarkedList] = useState<ReplenishMark[]>([]);
 
   useEffect(() => {
@@ -94,7 +97,7 @@ export function OrderDetail({
   const isProductMarked = (code: string) =>
     markedList.some((m) => m.code === code);
 
-  // 🔹 지정이송 모달 상태
+  // 지정이송 모달
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferTarget, setTransferTarget] = useState<{
     code: string;
@@ -102,27 +105,11 @@ export function OrderDetail({
     route: string;
   } | null>(null);
 
-  // 🔹 상품 이미지 모달 상태
-  const [imageModalOpen, setImageModalOpen] = useState(false);
-  const [imageModalCode, setImageModalCode] = useState<string | null>(null);
-
   const handleClickComplete = () => {
     if (onComplete) {
-      onComplete(items); // 🔹 선택된 주문의 아이템 목록을 넘겨줌
+      onComplete(items);
     }
   };
-
-  const currentImageInfo =
-    imageModalCode && PRODUCT_IMAGE_MAP[imageModalCode]
-      ? PRODUCT_IMAGE_MAP[imageModalCode]
-      : null;
-
-  const currentImageItem =
-    imageModalCode &&
-    (items.find(
-      (it) =>
-        ((it as any).code ?? (it as any).itemCode ?? "") === imageModalCode,
-    ) as any | undefined);
 
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
@@ -145,7 +132,6 @@ export function OrderDetail({
               {(order as any).shipLocation ?? "2층 피킹라인 (고정)"}
             </span>
           </div>
-          {/* 보충 마킹 개수 간단 표시 */}
           <div className="mt-1 text-[11px] text-gray-500">
             보충 마킹된 품목:{" "}
             <span className="ml-1 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">
@@ -178,14 +164,14 @@ export function OrderDetail({
         <table className="min-w-full border-collapse text-[12px]">
           <thead className="bg-gray-100">
             <tr>
-              <th className="border-b px-3 py-2 text-left">상품코드</th>
+              {/* 상품코드 컬럼 삭제됨 */}
               <th className="border-b px-3 py-2 text-left">상품명</th>
               <th className="border-b px-3 py-2 text-right">주문수량</th>
               <th className="border-b px-3 py-2 text-right">피킹창고 재고</th>
               <th className="border-b px-3 py-2 text-center">상태</th>
               <th className="border-b px-3 py-2 text-center">AMR 호출</th>
+              <th className="border-b px-3 py-2 text-center">지정이송</th>
               <th className="border-b px-3 py-2 text-center">위치</th>
-              {/* 🔹 맨 오른쪽에 마킹 컬럼 */}
               <th className="border-b px-3 py-2 text-center">재고부족</th>
             </tr>
           </thead>
@@ -199,32 +185,22 @@ export function OrderDetail({
 
               const location: LocationStatus = locationMap[key] ?? "창고";
               const marked = isProductMarked(key);
-              const hasImage = !!PRODUCT_IMAGE_MAP[key];
+
+              const handleRowClick = () => {
+                if (onSelectItemForPreview) {
+                  onSelectItemForPreview(it);
+                }
+              };
 
               return (
-                <tr key={key} className="bg-white">
-                  {/* 상품코드 */}
-                  <td className="border-t px-3 py-2 font-mono text-[12px]">
-                    {key}
-                  </td>
-
-                  {/* 상품명 + 이미지 버튼 */}
+                <tr
+                  key={key}
+                  className="bg-white hover:bg-blue-50 cursor-pointer"
+                  onClick={handleRowClick}
+                >
+                  {/* 상품명만 표시 (상품코드는 숨김) */}
                   <td className="border-t px-3 py-2 text-[12px]">
-                    <div className="flex items-center gap-2">
-                      <span>{(it as any).name}</span>
-                      {hasImage && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setImageModalCode(key);
-                            setImageModalOpen(true);
-                          }}
-                          className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] text-gray-600 hover:bg-gray-100"
-                        >
-                          이미지
-                        </button>
-                      )}
-                    </div>
+                    {(it as any).name}
                   </td>
 
                   {/* 주문수량 */}
@@ -235,22 +211,25 @@ export function OrderDetail({
                     {pickingStock} EA
                   </td>
 
-                  {/* 상태 */}
+                  {/* 상태 : 부족 / 여유 */}
                   <td className="border-t px-3 py-2 text-center">
                     {lowStock ? (
                       <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[11px] text-red-600">
-                        피킹창고 부족
+                        부족
                       </span>
                     ) : (
                       <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-600">
-                        피킹창고 충분
+                        여유
                       </span>
                     )}
                   </td>
 
-                  {/* AMR 호출 / 지정이송 */}
+                  {/* AMR 호출 (지정이송 버튼 제거) */}
                   <td className="border-t px-3 py-2 text-center">
-                    <div className="inline-flex items-center gap-1">
+                    <div
+                      className="inline-flex items-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <select
                         className="rounded border px-2 py-0.5 text-[11px]"
                         value={routeValue}
@@ -278,22 +257,28 @@ export function OrderDetail({
                       >
                         호출
                       </button>
-
-                      <button
-                        type="button"
-                        className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-100"
-                        onClick={() => {
-                          setTransferTarget({
-                            code: key,
-                            name: (it as any).name,
-                            route: routeValue,
-                          });
-                          setTransferOpen(true);
-                        }}
-                      >
-                        지정이송
-                      </button>
                     </div>
+                  </td>
+
+                  {/* 새 컬럼: 지정이송 */}
+                  <td
+                    className="border-t px-3 py-2 text-center"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-100"
+                      onClick={() => {
+                        setTransferTarget({
+                          code: key,
+                          name: (it as any).name,
+                          route: routeValue,
+                        });
+                        setTransferOpen(true);
+                      }}
+                    >
+                      지정이송
+                    </button>
                   </td>
 
                   {/* 위치 */}
@@ -307,8 +292,11 @@ export function OrderDetail({
                     </span>
                   </td>
 
-                  {/* 🔹 맨 오른쪽: 마킹 버튼 (☆ / ★ 토글) */}
-                  <td className="border-t px-3 py-2 text-center">
+                  {/* 재고부족 마킹 */}
+                  <td
+                    className="border-t px-3 py-2 text-center"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
                       type="button"
                       onClick={() =>
@@ -320,11 +308,7 @@ export function OrderDetail({
                             ? "border-amber-400 bg-amber-50 text-amber-700"
                             : "border-gray-300 bg-white text-gray-500 hover:bg-gray-50"
                         }`}
-                      title={
-                        marked
-                          ? "마킹 해제"
-                          : "나중에 재고 보충이 필요하면 눌러두세요"
-                      }
+                      title={marked ? "마킹 해제" : "나중에 재고 보충이 필요하면 눌러두세요"}
                     >
                       <span className="text-[13px] leading-none">
                         {marked ? "★" : "☆"}
@@ -338,7 +322,7 @@ export function OrderDetail({
         </table>
       </div>
 
-      {/* 하단 안내 + 버튼 */}
+      {/* 하단 버튼 */}
       <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
         <div className="space-y-1" />
         <div className="flex items-center gap-2">
@@ -364,7 +348,7 @@ export function OrderDetail({
         </div>
       </div>
 
-      {/* 🔹 지정이송 모달 */}
+      {/* 지정이송 모달 */}
       <PalletDirectTransferModal
         open={transferOpen}
         onClose={() => setTransferOpen(false)}
@@ -372,49 +356,6 @@ export function OrderDetail({
         productName={transferTarget?.name}
         fromLocation={transferTarget?.route}
       />
-
-      {/* 🔹 상품 이미지 모달 */}
-      {imageModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-[520px] max-w-[90vw] rounded-2xl bg-white p-4 shadow-xl">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-semibold">
-                상품 이미지 확인
-              </div>
-              <button
-                className="text-xs text-gray-500 hover:text-gray-800"
-                onClick={() => setImageModalOpen(false)}
-              >
-                닫기 ✕
-              </button>
-            </div>
-
-            {currentImageInfo ? (
-              <div className="space-y-3">
-                <div className="flex justify-center">
-                  <img
-                    src={currentImageInfo.main}
-                    alt={currentImageItem?.name ?? imageModalCode ?? "상품 이미지"}
-                    className="max-h-[360px] w-full rounded-lg border border-gray-200 bg-white object-contain"
-                  />
-                </div>
-                <div className="text-center text-[12px] text-gray-700">
-                  {currentImageItem?.name ?? "상품명 미등록"}{" "}
-                  {imageModalCode && (
-                    <span className="font-mono text-gray-500">
-                      ({imageModalCode})
-                    </span>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <p className="text-center text-[12px] text-gray-500">
-                등록된 이미지가 없습니다.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
