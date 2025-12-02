@@ -2,21 +2,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import QRCode from "react-qr-code"; // ← npm i react-qr-code
+import QRCode from "react-qr-code";
 
 type Product = {
   code: string;
   name: string;
-  boxEa: number; // 기본 1BOX 당 내품 수량
+  boxEa: number;
 };
 
 type BoxLabelRecord = {
   id: string;
   productCode: string;
   productName: string;
-  boxEa: number; // 실제 라벨에 찍힐 BOX당 내품 수량
+  boxEa: number;
   lotNo: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   memo?: string;
 };
 
@@ -35,30 +35,23 @@ function todayStr() {
 }
 
 export default function ProductionManagementView() {
-  // ───────────────── 상품 선택/입력 상태 ─────────────────
+  // ───── 상품/입력 상태 ─────
   const [searchProductText, setSearchProductText] = useState("");
   const [selectedProductCode, setSelectedProductCode] = useState<string | null>(
     null,
   );
-
-  // BOX당 내품수량(수정 가능)
   const [boxEaInput, setBoxEaInput] = useState<number | "">("");
-
-  // 생산일자, LOT번호
   const [prodDateInput, setProdDateInput] = useState<string>(todayStr());
   const [lotNoInput, setLotNoInput] = useState<string>("");
 
-  // 자동완성 드롭다운
   const [showProductDropdown, setShowProductDropdown] = useState(false);
 
-  // 라벨 내역(히스토리)
+  // 라벨 내역/선택
   const [labels, setLabels] = useState<BoxLabelRecord[]>([]);
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
 
-  // 라벨 미리보기 모달
+  // 모달
   const [labelModalOpen, setLabelModalOpen] = useState(false);
-
-  // 수정 모달
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState<{
     id: string;
@@ -70,13 +63,15 @@ export default function ProductionManagementView() {
     memo?: string;
   } | null>(null);
 
-  // ───────────────── 파생 값 ─────────────────
+  // 검색 필터
+  const [historySearch, setHistorySearch] = useState("");
+
+  // ───── 파생 값 ─────
   const selectedProduct = useMemo(
     () => productMaster.find((p) => p.code === selectedProductCode) ?? null,
     [selectedProductCode],
   );
 
-  // 자동완성 필터
   const filteredProducts = useMemo(() => {
     const q = searchProductText.trim().toLowerCase();
     if (!q) return productMaster;
@@ -86,12 +81,22 @@ export default function ProductionManagementView() {
     );
   }, [searchProductText]);
 
+  const filteredLabels = useMemo(() => {
+    if (!historySearch.trim()) return labels;
+    const q = historySearch.trim().toLowerCase();
+    return labels.filter(
+      (l) =>
+        l.productCode.toLowerCase().includes(q) ||
+        l.productName.toLowerCase().includes(q) ||
+        l.lotNo.toLowerCase().includes(q),
+    );
+  }, [labels, historySearch]);
+
   const selectedLabel = useMemo(
     () => labels.find((l) => l.id === selectedLabelId) ?? null,
     [labels, selectedLabelId],
   );
 
-  // QR payload (BOX 라벨 정보만)
   const qrPayload = selectedLabel
     ? JSON.stringify({
         type: "BOX_LABEL",
@@ -104,7 +109,7 @@ export default function ProductionManagementView() {
       })
     : "";
 
-  // ───────────────── 핸들러: 상품 검색/선택 ─────────────────
+  // ───── 핸들러: 상품 선택/검색 ─────
   const handleSearchProductChange = (value: string) => {
     setSearchProductText(value);
     setShowProductDropdown(!!value.trim());
@@ -112,18 +117,16 @@ export default function ProductionManagementView() {
 
   const handleSelectProduct = (code: string) => {
     setSelectedProductCode(code);
-
     const prod = productMaster.find((p) => p.code === code);
+
     if (prod) {
-      // 검색창에는 코드만
       setSearchProductText(prod.code);
-      // 기본 BOX당 내품수량
       setBoxEaInput(prod.boxEa);
     } else {
       setBoxEaInput("");
     }
 
-    // 상품 선택 시 LOT 번호 자동 생성 (상품코드 + 현재 생산일자 기준)
+    // LOT 자동 생성
     const dateCompact = prodDateInput.replace(/-/g, "");
     const seq = (
       labels.filter((l) => l.productCode === code).length + 1
@@ -136,7 +139,7 @@ export default function ProductionManagementView() {
     setShowProductDropdown(false);
   };
 
-  // ───────────────── 핸들러: 라벨 생성(저장 + 미리보기) ─────────────────
+  // ───── 라벨 생성 ─────
   const handleCreateLabel = () => {
     if (!selectedProduct) {
       alert("상품을 먼저 선택해 주세요.");
@@ -169,23 +172,18 @@ export default function ProductionManagementView() {
     setLabelModalOpen(true);
   };
 
-  // ───────────────── 히스토리 검색 ─────────────────
-  const [historySearch, setHistorySearch] = useState("");
-  const filteredLabels = useMemo(() => {
-    if (!historySearch.trim()) return labels;
-    const q = historySearch.trim().toLowerCase();
-    return labels.filter(
-      (l) =>
-        l.productCode.toLowerCase().includes(q) ||
-        l.productName.toLowerCase().includes(q) ||
-        l.lotNo.toLowerCase().includes(q),
-    );
-  }, [labels, historySearch]);
-
+  // ───── 라벨 히스토리 행 클릭 ─────
   const handleClickRow = (labelId: string) => {
     setSelectedLabelId(labelId);
   };
 
+  // ───── 행별 라벨 출력 ─────
+  const handlePrintRow = (label: BoxLabelRecord) => {
+    setSelectedLabelId(label.id);
+    setLabelModalOpen(true);
+  };
+
+  // 상단 버튼에서 사용하던 공용 출력이 필요 없으면 남겨둬도 되고, 안 쓰니 걍 두긴 함
   const handlePrintLabel = () => {
     if (!selectedLabel) {
       alert("라벨을 출력할 내역을 먼저 선택해 주세요.");
@@ -194,7 +192,7 @@ export default function ProductionManagementView() {
     setLabelModalOpen(true);
   };
 
-  // ───────────────── 수정 모달 관련 ─────────────────
+  // ───── 수정 모달 관련 ─────
   const openEditModal = (label: BoxLabelRecord) => {
     setEditForm({
       id: label.id,
@@ -228,19 +226,15 @@ export default function ProductionManagementView() {
     setEditModalOpen(false);
   };
 
-  // ───────────────── 렌더 ─────────────────
+  // ───── 렌더 ─────
   return (
     <div className="flex min-h-[600px] flex-col gap-4">
-      {/* 상단 설명 영역 (필요하면 텍스트만 조정) */}
-      {/* <h1 className="text-lg font-semibold">생산 박스 라벨 관리</h1> */}
-
-      {/* 좌: 라벨 정보 입력 / 우: 라벨 내역 조회 */}
       <div className="grid grid-cols-2 gap-4">
-        {/* ───────────── 좌측 : 박스 라벨 생성 ───────────── */}
+        {/* ─ left : 박스 라벨 생성 ─ */}
         <section className="flex flex-col rounded-2xl border bg-white p-4 text-sm">
           <h2 className="mb-3 text-base font-semibold">박스 라벨 생성</h2>
 
-          {/* 상품 검색 + 자동완성 */}
+          {/* 상품 검색 */}
           <div className="relative mb-3">
             <label className="mb-1 block text-[11px] text-gray-600">
               상품 검색 (코드 또는 상품명)
@@ -251,13 +245,10 @@ export default function ProductionManagementView() {
               value={searchProductText}
               onChange={(e) => handleSearchProductChange(e.target.value)}
               onFocus={() => {
-                if (searchProductText.trim()) {
-                  setShowProductDropdown(true);
-                }
+                if (searchProductText.trim()) setShowProductDropdown(true);
               }}
             />
 
-            {/* 자동완성 리스트 */}
             {showProductDropdown && filteredProducts.length > 0 && (
               <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-md border bg-white text-[12px] shadow-lg">
                 {filteredProducts.map((p) => (
@@ -276,7 +267,7 @@ export default function ProductionManagementView() {
             )}
           </div>
 
-          {/* 선택된 상품 + 라벨 입력 */}
+          {/* 선택된 상품 + 라벨 정보 */}
           <div className="mt-2 rounded-xl border bg-gray-50 px-4 py-3 text-[12px]">
             <div className="mb-1 text-[11px] font-semibold text-gray-700">
               라벨 정보
@@ -284,7 +275,6 @@ export default function ProductionManagementView() {
 
             {selectedProduct ? (
               <>
-                {/* 상품명 */}
                 <div className="mb-2">
                   <span className="inline-block w-24 text-gray-500">
                     상품명
@@ -294,7 +284,6 @@ export default function ProductionManagementView() {
                   </span>
                 </div>
 
-                {/* BOX당 내품수량 (수정 가능) */}
                 <div className="mb-2">
                   <label className="mb-1 inline-block w-24 text-[11px] text-gray-600">
                     BOX당 내품수량
@@ -313,7 +302,6 @@ export default function ProductionManagementView() {
                   <span className="ml-1 text-[11px] text-gray-500">EA</span>
                 </div>
 
-                {/* 생산일자 */}
                 <div className="mb-2">
                   <label className="mb-1 inline-block w-24 text-[11px] text-gray-600">
                     생산일자
@@ -326,7 +314,6 @@ export default function ProductionManagementView() {
                   />
                 </div>
 
-                {/* LOT 번호 (상품 선택 시 자동 생성, 필요 시 수정 가능) */}
                 <div className="mb-2">
                   <label className="mb-1 inline-block w-24 text-[11px] text-gray-600">
                     LOT 번호
@@ -342,7 +329,6 @@ export default function ProductionManagementView() {
                   </div>
                 </div>
 
-                {/* QR 생성 버튼 */}
                 <div className="mt-4 flex justify-end">
                   <button
                     type="button"
@@ -361,13 +347,10 @@ export default function ProductionManagementView() {
           </div>
         </section>
 
-        {/* ───────────── 우측 : 라벨 내역 조회 ───────────── */}
+        {/* ─ right : 박스 라벨 내역 ─ */}
         <section className="flex flex-col rounded-2xl border bg-white p-4 text-sm">
           <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold">박스 라벨 내역</h2>
-            </div>
-
+            <h2 className="text-base font-semibold">박스 라벨 내역</h2>
             <div className="flex items-center gap-2">
               <input
                 className="w-44 rounded-md border px-2 py-1 text-[12px]"
@@ -375,13 +358,7 @@ export default function ProductionManagementView() {
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
               />
-              <button
-                type="button"
-                onClick={handlePrintLabel}
-                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-              >
-                라벨 출력
-              </button>
+              {/* 상단 공통 라벨 출력 버튼은 제거 */}
             </div>
           </div>
 
@@ -397,6 +374,9 @@ export default function ProductionManagementView() {
                   </th>
                   <th className="border-b px-3 py-2 text-left">LOT번호</th>
                   <th className="border-b px-3 py-2 text-center">수정</th>
+                  <th className="border-b px-3 py-2 text-center">
+                    라벨 출력
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -423,6 +403,8 @@ export default function ProductionManagementView() {
                       <td className="border-t px-3 py-2 font-mono">
                         {label.lotNo}
                       </td>
+
+                      {/* 수정 버튼 (왼쪽) */}
                       <td
                         className="border-t px-3 py-2 text-center"
                         onClick={(e) => e.stopPropagation()}
@@ -435,13 +417,27 @@ export default function ProductionManagementView() {
                           수정
                         </button>
                       </td>
+
+                      {/* 라벨 출력 버튼 (맨 오른쪽) */}
+                      <td
+                        className="border-t px-3 py-2 text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 hover:bg-gray-100"
+                          onClick={() => handlePrintRow(label)}
+                        >
+                          라벨 출력
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
                 {filteredLabels.length === 0 && (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="border-t px-3 py-4 text-center text-[12px] text-gray-400"
                     >
                       생성된 라벨 내역이 없습니다.
@@ -454,11 +450,10 @@ export default function ProductionManagementView() {
         </section>
       </div>
 
-      {/* ───────────── 라벨 미리보기 모달 (BOX 옆면 라벨) ───────────── */}
+      {/* ─ 라벨 미리보기 모달 ─ */}
       {labelModalOpen && selectedLabel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-[340px] rounded-2xl bg-white p-4 text-[12px] shadow-2xl">
-            {/* 헤더 */}
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold">라벨 미리보기</h2>
               <button
@@ -470,7 +465,6 @@ export default function ProductionManagementView() {
               </button>
             </div>
 
-            {/* 라벨 카드 영역 (박스 옆면) */}
             <div
               id="label-print-area"
               className="mx-auto mb-4 w-[260px] border border-gray-900 bg-white px-3 py-2 text-[11px]"
@@ -512,7 +506,6 @@ export default function ProductionManagementView() {
                 <span className="font-mono">{selectedLabel.lotNo}</span>
               </div>
 
-              {/* QR 코드 영역 */}
               <div className="mt-2 flex items-center justify-between">
                 <span className="text-[11px] text-gray-600">QR 코드</span>
                 <div className="rounded border border-gray-300 bg-white p-1">
@@ -521,7 +514,6 @@ export default function ProductionManagementView() {
               </div>
             </div>
 
-            {/* 버튼 */}
             <div className="flex justify-center gap-2">
               <button
                 type="button"
@@ -532,9 +524,7 @@ export default function ProductionManagementView() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  window.print();
-                }}
+                onClick={() => window.print()}
                 className="rounded-full bg-gray-900 px-4 py-1 text-xs font-semibold text-white hover:bg-black"
               >
                 인쇄
@@ -544,7 +534,7 @@ export default function ProductionManagementView() {
         </div>
       )}
 
-      {/* ───────────── 라벨 수정 모달 ───────────── */}
+      {/* ─ 라벨 수정 모달 ─ */}
       {editModalOpen && editForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-[420px] rounded-2xl bg-white p-4 text-[12px] shadow-2xl">
@@ -559,7 +549,6 @@ export default function ProductionManagementView() {
               </button>
             </div>
 
-            {/* 읽기전용 상품 정보 */}
             <div className="mb-3 rounded-xl bg-gray-50 px-3 py-2">
               <div className="mb-1">
                 <span className="inline-block w-20 text-gray-500">
@@ -571,7 +560,6 @@ export default function ProductionManagementView() {
               </div>
             </div>
 
-            {/* 수정 가능한 필드 */}
             <div className="space-y-2">
               <div>
                 <label className="mb-1 block text-[11px] text-gray-600">
