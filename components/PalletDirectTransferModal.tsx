@@ -43,7 +43,6 @@ export function PalletDirectTransferModal({
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
 
   // 🔹 모달 내부에서 사용하는 출발 위치 상태
-  //    (기본값은 props.fromLocation, 없으면 "피킹")
   const [fromLoc, setFromLoc] = useState<string>(fromLocation ?? "피킹");
 
   // 모든 위치 리스트
@@ -85,10 +84,12 @@ export function PalletDirectTransferModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      {/* 원래 쓰던 정도의 사이즈로 */}
       <div className="flex h-[520px] w-[760px] flex-col rounded-2xl bg-white shadow-2xl">
-        {/* 헤더 */}
+        {/* 🔹 헤더 */}
         <div className="flex items-center justify-between border-b px-5 py-3">
-          <div>
+          {/* 왼쪽: 제목 + 대상 상품 */}
+          <div className="flex flex-col">
             <h2 className="text-sm font-semibold">
               지정이송 · 1층 입출고장 파렛트 위치 지정
             </h2>
@@ -102,12 +103,12 @@ export function PalletDirectTransferModal({
             )}
           </div>
 
-          {/* 🔹 출발 위치 선택 UI (헤더 오른쪽) */}
+          {/* 오른쪽: 출발 위치 + 닫기 버튼 (가로 정렬) */}
           <div className="flex items-center gap-3">
-            <div className="text-right text-[11px] text-gray-600">
-              <div className="mb-1 font-semibold">출발 위치</div>
+            <div className="flex items-center gap-2 text-[1px] text-gray-600">
+              <span className="font-semibold text-gray-700 text-sm">출발 위치</span>
               <select
-                className="w-[110px] rounded-md border px-2 py-1 text-[11px]"
+                className="w-[140px] rounded-md border px-3 py-1.5 text-sm"
                 value={fromLoc}
                 onChange={(e) => setFromLoc(e.target.value)}
               >
@@ -120,7 +121,7 @@ export function PalletDirectTransferModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200"
+              className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700 hover:bg-gray-200"
             >
               닫기
             </button>
@@ -138,17 +139,17 @@ export function PalletDirectTransferModal({
                     {zone} zone
                   </div>
 
-                  <div className="inline-grid grid-cols-4 gap-1 rounded-xl bg-gray-50 p-2">
+                  <div className="inline-grid grid-cols-4 gap-2 rounded-xl bg-gray-50 p-3">
                     {slotsByZone[zone].map(({ id, occupied }) => {
                       const isSelected = id === selectedSlotId;
                       const base =
-                        "flex h-7 w-7 items-center justify-center rounded text-[10px]";
+                        "flex h-9 w-9 items-center justify-center rounded-md";
 
                       if (occupied) {
                         return (
                           <div
                             key={id}
-                            className={`${base} cursor-default bg-amber-300 text-gray-900`}
+                            className={`${base} cursor-default border border-amber-300 bg-amber-300`}
                             title={`${id} : 이미 파렛트 있음`}
                           />
                         );
@@ -158,7 +159,7 @@ export function PalletDirectTransferModal({
                         <button
                           key={id}
                           type="button"
-                          className={`${base} border bg-white hover:bg-amber-50 ${
+                          className={`${base} border border-gray-300 bg-white hover:bg-amber-50 ${
                             isSelected ? "ring-2 ring-blue-500" : ""
                           }`}
                           onClick={() => setSelectedSlotId(id)}
@@ -195,7 +196,7 @@ export function PalletDirectTransferModal({
 
         {/* 푸터 버튼 */}
         <div className="flex items-center justify-between border-t px-5 py-3 text-[11px] text-gray-500">
-          <span></span>
+          <span />
           <div className="flex gap-2">
             <button
               type="button"
