@@ -12,6 +12,14 @@ type Pallet = {
   eaQty: number;       // 낱개 수량(EA)
 };
 
+// 🔹 호출 위치 타입 추가
+type CallDestination =
+  | "3층창고"
+  | "2층창고"
+  | "피킹창고"
+  | "생산라인"
+  | "입출고라인";
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -192,6 +200,10 @@ export function RobotProductCallModal({
   } | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  // 🔹 호출 위치 state (기본값: 피킹창고)
+  const [callDestination, setCallDestination] =
+    useState<CallDestination>("피킹창고");
+
   // ---------------------- memo values ----------------------
   // 검색 결과
   const searchResults = useMemo(() => {
@@ -259,6 +271,8 @@ export function RobotProductCallModal({
     setSelectedPallets([]);
     setSelectedProduct(null);
     setShowSuggestions(false);
+    // 🔹 모달 닫힐 때 호출 위치도 기본값으로 초기화
+    setCallDestination("피킹창고");
   };
 
   // 모달이 닫힐 때마다 내부 상태 초기화
@@ -345,12 +359,14 @@ export function RobotProductCallModal({
       alert(
         `${items[0].name}${
           items.length > 1 ? ` 외 ${items.length - 1}개 품목` : ""
-        } 기준으로 긴급출고 주문이 생성됩니다.`,
+        } 기준으로 ${callDestination}로 긴급출고 주문이 생성됩니다.`,
       );
     } else {
       // 수동 호출: 단순 안내
       onConfirmSelection?.(selectedPallets);
-      alert(`선택한 파렛트 ${selectedPallets.length}개를 호출합니다.`);
+      alert(
+        `${callDestination}로 선택한 파렛트 ${selectedPallets.length}개를 호출합니다.`,
+      );
     }
 
     resetState();
@@ -382,11 +398,13 @@ export function RobotProductCallModal({
         { code: target.productCode, name: target.productName },
       ]);
       alert(
-        `긴급출고로 ${target.productName} 1파렛트(${target.id})를 자동 호출합니다.`,
+        `긴급출고로 ${target.productName} 1파렛트(${target.id})를 ${callDestination}로 자동 호출합니다.`,
       );
     } else {
       onConfirmSelection?.([target]);
-      alert(`${target.productName} 1파렛트(${target.id})를 자동 호출합니다.`);
+      alert(
+        `${target.productName} 1파렛트(${target.id})를 ${callDestination}로 자동 호출합니다.`,
+      );
     }
 
     resetState();
@@ -396,7 +414,9 @@ export function RobotProductCallModal({
   // 🔵 빈 파렛트 호출
   const handleCallEmptyPallet = () => {
     // TODO: 실제 AMR API 연동 지점
-    alert("빈 파렛트 AMR 호출을 전송했습니다. (데모)");
+    alert(
+      `${callDestination}로 빈 파렛트 AMR 호출을 전송했습니다. (데모)`,
+    );
   };
 
   // ✅ 모든 hook 이후에 open 체크
@@ -421,6 +441,26 @@ export function RobotProductCallModal({
               상품 기반으로 파렛트를 선택하거나, 빈 파렛트를 바로 호출할 수
               있습니다.
             </p>
+
+            {/* 🔹 호출 위치 선택 UI */}
+            <div className="mt-2 flex items-center gap-2 text-[11px]">
+              <span className="text-sm font-semibold text-gray-800">
+                호출 위치
+              </span>
+              <select
+                value={callDestination}
+                onChange={(e) =>
+                  setCallDestination(e.target.value as CallDestination)
+                }
+                className="rounded-md border border-gray-400 bg-white px-2 py-1 text-[12px]"
+              >
+                <option value="3층창고">3층창고</option>
+                <option value="2층창고">2층창고</option>
+                <option value="피킹창고">피킹창고</option>
+                <option value="생산라인">생산라인</option>
+                <option value="입출고라인">입출고라인</option>
+              </select>
+            </div>
           </div>
 
           {/* 오른쪽: 빈 파렛트 호출 + 닫기 */}

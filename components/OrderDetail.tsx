@@ -5,7 +5,10 @@ import { useMemo, useState, useEffect } from "react";
 import type { ReactElement } from "react";
 import type { Order, OrderItem, OrderStatus } from "./types";
 import { statusBadgeClass } from "./types";
-import { PalletDirectTransferModal } from "./PalletDirectTransferModal";
+import {
+  PalletDirectTransferModal,
+  type TransferInfo,
+} from "./PalletDirectTransferModal";
 import {
   getReplenishMarks,
   toggleReplenishMark,
@@ -45,23 +48,13 @@ export function OrderDetail({
   onComplete,
   onSelectItemForPreview,
 }: Props): ReactElement | null {
-  if (!order) {
-    return (
-      <div className="flex h-full items-center justify-center rounded-2xl border bg-white text-sm text-gray-500">
-        주문을 선택하면 상세 정보가 표시됩니다.
-      </div>
-    );
-  }
-
   // 🚩 주문이 바뀔 때 첫 번째 품목을 자동으로 프리뷰로 보내줌
   useEffect(() => {
     if (!onSelectItemForPreview) return;
     if (items.length === 0) return;
 
-    // 주문이 바뀌어서 items 배열이 바뀔 때만
-    // 첫 번째 품목을 기본 프리뷰로 보내준다.
     onSelectItemForPreview(items[0]);
-  }, [items]); // ❗ onSelectItemForPreview는 의존성에서 제거
+  }, [items, onSelectItemForPreview]);
 
   // 피킹창고 부족 여부
   const hasLowStock = useMemo(
@@ -81,6 +74,11 @@ export function OrderDetail({
       "L-009": "출고중",
     },
   );
+
+  // 🔹 상품별 지정이송 상태 (이송중 여부 + 목적지)
+  const [transferInfoMap, setTransferInfoMap] = useState<
+    Record<string, TransferInfo | undefined>
+  >({});
 
   // 보충 마킹 상태
   const [markedList, setMarkedList] = useState<ReplenishMark[]>([]);
@@ -110,6 +108,15 @@ export function OrderDetail({
       onComplete(items);
     }
   };
+
+  // ✅ hook 다 선언한 뒤에 order 여부 체크
+  if (!order) {
+    return (
+      <div className="flex h-full items-center justify-center rounded-2xl border bg-white text-sm text-gray-500">
+        주문을 선택하면 상세 정보가 표시됩니다.
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
@@ -164,7 +171,6 @@ export function OrderDetail({
         <table className="min-w-full border-collapse text-[12px]">
           <thead className="bg-gray-100">
             <tr>
-              {/* 상품코드 컬럼 삭제됨 */}
               <th className="border-b px-3 py-2 text-left">상품명</th>
               <th className="border-b px-3 py-2 text-right">주문수량</th>
               <th className="border-b px-3 py-2 text-right">피킹창고 재고</th>
@@ -186,6 +192,9 @@ export function OrderDetail({
               const location: LocationStatus = locationMap[key] ?? "창고";
               const marked = isProductMarked(key);
 
+              const transferInfo = transferInfoMap[key];
+              const isTransferring = transferInfo?.status === "이송중";
+
               const handleRowClick = () => {
                 if (onSelectItemForPreview) {
                   onSelectItemForPreview(it);
@@ -195,10 +204,10 @@ export function OrderDetail({
               return (
                 <tr
                   key={key}
-                  className="bg-white hover:bg-blue-50 cursor-pointer"
+                  className="cursor-pointer bg-white hover:bg-blue-50"
                   onClick={handleRowClick}
                 >
-                  {/* 상품명만 표시 (상품코드는 숨김) */}
+                  {/* 상품명 */}
                   <td className="border-t px-3 py-2 text-[12px]">
                     {(it as any).name}
                   </td>
@@ -224,7 +233,7 @@ export function OrderDetail({
                     )}
                   </td>
 
-                  {/* AMR 호출 (지정이송 버튼 제거) */}
+                  {/* AMR 호출 */}
                   <td className="border-t px-3 py-2 text-center">
                     <div
                       className="inline-flex items-center gap-1"
@@ -260,14 +269,19 @@ export function OrderDetail({
                     </div>
                   </td>
 
-                  {/* 새 컬럼: 지정이송 */}
+                  {/* 지정이송 */}
                   <td
                     className="border-t px-3 py-2 text-center"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
                       type="button"
-                      className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-100"
+                      className={`rounded-full px-2 py-0.5 text-[11px] border
+                        ${
+                          isTransferring
+                            ? "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                            : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                        }`}
                       onClick={() => {
                         setTransferTarget({
                           code: key,
@@ -277,7 +291,7 @@ export function OrderDetail({
                         setTransferOpen(true);
                       }}
                     >
-                      지정이송
+                      {isTransferring ? "이송중" : "지정이송"}
                     </button>
                   </td>
 
@@ -308,7 +322,9 @@ export function OrderDetail({
                             ? "border-amber-400 bg-amber-50 text-amber-700"
                             : "border-gray-300 bg-white text-gray-500 hover:bg-gray-50"
                         }`}
-                      title={marked ? "마킹 해제" : "나중에 재고 보충이 필요하면 눌러두세요"}
+                      title={
+                        marked ? "마킹 해제" : "나중에 재고 보충이 필요하면 눌러두세요"
+                      }
                     >
                       <span className="text-[13px] leading-none">
                         {marked ? "★" : "☆"}
@@ -354,7 +370,26 @@ export function OrderDetail({
         onClose={() => setTransferOpen(false)}
         productCode={transferTarget?.code}
         productName={transferTarget?.name}
-        fromLocation={transferTarget?.route}
+        existingTransfer={
+          transferTarget?.code
+            ? transferInfoMap[transferTarget.code] ?? null
+            : null
+        }
+        onConfirmTransfer={(info) => {
+          if (!transferTarget?.code) return;
+
+          // 🔹 이 상품의 지정이송 상태 저장 → 버튼이 "이송중"으로 바뀜
+          setTransferInfoMap((prev) => ({
+            ...prev,
+            [transferTarget.code]: info,
+          }));
+
+          // 🔹 위치도 "출고중"으로 변경
+          setLocationMap((prev) => ({
+            ...prev,
+            [transferTarget.code]: "출고중",
+          }));
+        }}
       />
     </div>
   );

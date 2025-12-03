@@ -12,7 +12,9 @@ type ReceivingItem = {
   id: number;
   code: string;
   name: string;
-  qty: number;
+  qty: number;        // 입고/출고 수량
+  boxQty?: number;    // 현재 박스 수량(출고 탭용)
+  totalQty?: number;  // 현재 전체 수량 EA(출고 탭용)
 };
 
 type ProductMaster = {
@@ -25,7 +27,15 @@ type PalletMaster = {
   desc: string;
 };
 
-/** 🔹 예시용 상품 마스터 (자동완성에 사용) */
+type PalletStock = {
+  palletId: string;
+  code: string;
+  name: string;
+  boxQty: number;
+  eaQty: number;
+};
+
+/** 🔹 예시 상품 마스터 */
 const PRODUCT_MASTER: ProductMaster[] = [
   { code: "P-1001", name: "PET 500ml 투명" },
   { code: "P-1002", name: "PET 300ml 밀키" },
@@ -34,7 +44,7 @@ const PRODUCT_MASTER: ProductMaster[] = [
   { code: "L-5001", name: "라벨 500ml 화이트" },
 ];
 
-/** 🔹 예시 파렛트 목록 (파렛트 번호 자동완성용) */
+/** 🔹 예시 파렛트 마스터 */
 const PALLET_MASTER: PalletMaster[] = [
   { id: "PLT-1001", desc: "3층 플랫파렛트 A-01" },
   { id: "PLT-1002", desc: "3층 플랫파렛트 A-02" },
@@ -42,6 +52,47 @@ const PALLET_MASTER: PalletMaster[] = [
   { id: "PLT-2002", desc: "2층 잔량파렛트 B-02" },
   { id: "PLT-3001", desc: "1층 출고 대기존 S-01" },
 ];
+
+/** 🔹 예시 파렛트 현재 적재 재고 */
+const PALLET_STOCK: PalletStock[] = [
+  {
+    palletId: "PLT-1001",
+    code: "P-1001",
+    name: "PET 500ml 투명",
+    boxQty: 10,
+    eaQty: 1200,
+  },
+  {
+    palletId: "PLT-1001",
+    code: "C-2001",
+    name: "캡 28파이 화이트",
+    boxQty: 8,
+    eaQty: 960,
+  },
+  {
+    palletId: "PLT-2001",
+    code: "P-2001",
+    name: "PET 1L 투명",
+    boxQty: 5,
+    eaQty: 600,
+  },
+];
+
+const getPalletStock = (palletId: string): PalletStock[] =>
+  PALLET_STOCK.filter((s) => s.palletId === palletId);
+
+const buildOutItemsFromStock = (palletId: string): ReceivingItem[] => {
+  const now = Date.now();
+  const stock = getPalletStock(palletId);
+  return stock.map((s, idx) => ({
+    id: now + idx,
+    code: s.code,
+    name: s.name,
+    qty: 0,
+    boxQty: s.boxQty,
+    totalQty: s.eaQty,
+  }));
+};
 
 export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
   /** 🔹 공통: 활성 탭 (입고 / 출고) */
@@ -51,12 +102,10 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
   const [palletQRIn, setPalletQRIn] = useState("");
   const [selectedPalletIn, setSelectedPalletIn] =
     useState<PalletMaster | null>(null);
-  const [showPalletSuggestionsIn, setShowPalletSuggestionsIn] = useState(false); // ⭐ 추가
   const [searchTextIn, setSearchTextIn] = useState("");
   const [itemsIn, setItemsIn] = useState<ReceivingItem[]>([]);
-  const [targetLocationIn, setTargetLocationIn] = useState<"피킹" | "2-1" | "3-1">(
-    "피킹",
-  );
+  const [targetLocationIn, setTargetLocationIn] =
+    useState<"피킹" | "2-1" | "3-1">("피킹");
   const [selectedProductIn, setSelectedProductIn] =
     useState<ProductMaster | null>(null);
   const [showSuggestionsIn, setShowSuggestionsIn] = useState(false);
@@ -65,7 +114,6 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
   const [palletQROut, setPalletQROut] = useState("");
   const [selectedPalletOut, setSelectedPalletOut] =
     useState<PalletMaster | null>(null);
-  const [showPalletSuggestionsOut, setShowPalletSuggestionsOut] = useState(false); // ⭐ 추가
   const [itemsOut, setItemsOut] = useState<ReceivingItem[]>([]);
   const [targetLocationOut, setTargetLocationOut] =
     useState<"피킹" | "2-1" | "3-1">("피킹");
@@ -81,13 +129,11 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
     setTargetLocationIn("피킹");
     setSelectedProductIn(null);
     setShowSuggestionsIn(false);
-    setShowPalletSuggestionsIn(false);
     // 출고
     setPalletQROut("");
     setSelectedPalletOut(null);
     setItemsOut([]);
     setTargetLocationOut("피킹");
-    setShowPalletSuggestionsOut(false);
   };
 
   /** 🔹 모달 닫힐 때 내부 상태 초기화 */
@@ -97,7 +143,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
     }
   }, [open]);
 
-  /** 🔹 입고: 검색어 기준 상품 자동완성 리스트 */
+  /** 🔹 입고: 검색어 기준 자동완성 리스트 */
   const productSuggestionsIn = useMemo(() => {
     const q = searchTextIn.trim();
     if (!q) return [];
@@ -110,39 +156,30 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
     );
   }, [searchTextIn]);
 
-  /** 🔹 입고: 파렛트 자동완성 리스트 */
-  const palletSuggestionsIn = useMemo(() => {
-    // ✅ 이미 선택된 파렛트가 있으면 자동완성 리스트는 아예 안 만듦
-    if (selectedPalletIn) return [];
+  /** 🔹 입고: 선택된 파렛트의 현재 적재 목록 */
+  const currentInStock = useMemo(() => {
+    if (!selectedPalletIn) return [];
+    return getPalletStock(selectedPalletIn.id);
+  }, [selectedPalletIn]);
 
-    const q = palletQRIn.trim();
-    if (!q) return [];
-    const upper = q.toUpperCase();
+  /** 🔹 출고: 파렛트 선택/입력 시 자동으로 현재 재고를 품목 목록으로 세팅 */
+  useEffect(() => {
+    let palletId: string | null = null;
 
-    return PALLET_MASTER.filter(
-      (p) =>
-        p.id.toUpperCase().includes(upper) ||
-        p.desc.toLowerCase().includes(q.toLowerCase()),
-    );
-  }, [palletQRIn, selectedPalletIn]);   // ✅ deps 에 selectedPalletIn 추가
+    if (selectedPalletOut) {
+      palletId = selectedPalletOut.id;
+    } else if (palletQROut.trim()) {
+      palletId = palletQROut.trim();
+    }
 
+    if (!palletId) {
+      setItemsOut([]);
+      return;
+    }
 
-
-  /** 🔹 출고: 파렛트 자동완성 리스트 (출고 탭도 동일 사용) */
-  const palletSuggestionsOut = useMemo(() => {
-    if (selectedPalletOut) return [];
-
-    const q = palletQROut.trim();
-    if (!q) return [];
-    const upper = q.toUpperCase();
-
-    return PALLET_MASTER.filter(
-      (p) =>
-        p.id.toUpperCase().includes(upper) ||
-        p.desc.toLowerCase().includes(q.toLowerCase()),
-    );
-  }, [palletQROut, selectedPalletOut]);
-
+    const items = buildOutItemsFromStock(palletId);
+    setItemsOut(items);
+  }, [selectedPalletOut, palletQROut]);
 
   if (!open) return null;
 
@@ -170,6 +207,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
       name: baseProduct.name,
       qty: 0,
     };
+
     setItemsIn((prev) => [...prev, newItem]);
     setSearchTextIn("");
     setSelectedProductIn(null);
@@ -183,9 +221,40 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
     );
   };
 
-  const handleSubmitIn = () => {
+  /** 🔹 오른쪽 패널의 [입고] 버튼 */
+  const handleReceiveOnlyIn = () => {
     const validItems = itemsIn.filter((it) => it.qty > 0);
-    if (!palletQRIn.trim()) {
+    if (!selectedPalletIn && !palletQRIn.trim()) {
+      alert("파렛트 번호(QR)를 먼저 선택해 주세요.");
+      return;
+    }
+    if (validItems.length === 0) {
+      alert("입고 수량이 입력된 품목이 없습니다.");
+      return;
+    }
+
+    const palletText =
+      selectedPalletIn?.id ?? palletQRIn.trim() ?? "(파렛트 미지정)";
+    const first = validItems[0];
+
+    if (validItems.length === 1) {
+      alert(
+        `파렛트 ${palletText}에 ${first.name} 제품이 ${first.qty}개 입고 되었습니다.`,
+      );
+    } else {
+      const total = validItems.reduce((sum, x) => sum + x.qty, 0);
+      alert(
+        `파렛트 ${palletText}에 ${first.name} 외 ${
+          validItems.length - 1
+        }개 품목이 총 ${total}개 입고 되었습니다.`,
+      );
+    }
+  };
+
+  /** 🔹 푸터의 [이송 지시] 버튼 (입고 탭) */
+  const handleMoveIn = () => {
+    const validItems = itemsIn.filter((it) => it.qty > 0);
+    if (!selectedPalletIn && !palletQRIn.trim()) {
       alert("파렛트 번호(QR)를 입력해주세요.");
       return;
     }
@@ -204,9 +273,9 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
 
     alert(
       [
-        `[입고 지시]`,
+        `[입고 후 AMR 이송 지시]`,
         `파렛트: ${palletTextIn}`,
-        `위치: ${targetLocationIn}`,
+        `입고 위치: ${targetLocationIn}`,
         "",
         "입고 품목:",
         summary,
@@ -218,30 +287,6 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
   };
 
   // ----------------- 출고 탭 로직 -----------------
-
-  /** 예시 데이터 불러오기 (실제 WMS 연동 시에는 QR 기준 파렛트 내역 조회) */
-  const handleLoadSampleOut = () => {
-    if (!palletQROut.trim()) {
-      alert("먼저 출고할 파렛트 번호(QR)를 입력해 주세요.");
-      return;
-    }
-    const now = Date.now();
-    setItemsOut([
-      {
-        id: now,
-        code: "P-1001",
-        name: "PET 500ml 투명",
-        qty: 0,
-      },
-      {
-        id: now + 1,
-        code: "C-2001",
-        name: "캡 28파이 화이트",
-        qty: 0,
-      },
-    ]);
-  };
-
   const handleChangeQtyOut = (id: number, value: string) => {
     const num = Number(value.replace(/[^0-9]/g, "")) || 0;
     setItemsOut((prev) =>
@@ -251,7 +296,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
 
   const handleSubmitOut = () => {
     const validItems = itemsOut.filter((it) => it.qty > 0);
-    if (!palletQROut.trim()) {
+    if (!selectedPalletOut && !palletQROut.trim()) {
       alert("출고할 파렛트 번호(QR)를 입력해주세요.");
       return;
     }
@@ -260,37 +305,40 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
       return;
     }
 
-    const summary = validItems
-      .map((it) => `${it.name}(${it.code}) ${it.qty}EA`)
-      .join("\n");
-
     const palletTextOut = selectedPalletOut
       ? `${selectedPalletOut.id} (${selectedPalletOut.desc})`
       : palletQROut;
 
-    alert(
-      [
-        `[출고 / 이송 지시]`,
-        `파렛트: ${palletTextOut}`,
-        `이동 위치: ${targetLocationOut}`,
-        "",
-        "출고 품목:",
-        summary,
-      ].join("\n"),
-    );
+    // 🔔 요구사항: 수량 입력된 품목들만 모두 표시
+    if (validItems.length === 1) {
+      const f = validItems[0];
+      alert(
+        `파렛트 ${palletTextOut}에서 ${f.name} 제품이 ${f.qty}개 출고 되었습니다.\n이동 위치: ${targetLocationOut}`,
+      );
+    } else {
+      const lines = validItems.map(
+        (it) => `• ${it.name}(${it.code}) ${it.qty}EA`,
+      );
+      alert(
+        [
+          `파렛트 ${palletTextOut}에서 아래 제품들이 출고 되었습니다.`,
+          `이동 위치: ${targetLocationOut}`,
+          "",
+          ...lines,
+        ].join("\n"),
+      );
+    }
 
     resetAll();
     onClose();
   };
 
-  // ----------------- 렌더링 -----------------
-
+  // ----------------- 공통 렌더링용 변수 -----------------
   const isInTab = activeTab === "IN";
 
   const locationLabel = isInTab ? "입고 위치" : "이동 / 반납 위치";
   const locationValue = isInTab ? targetLocationIn : targetLocationOut;
-  const setLocation =
-    isInTab ? setTargetLocationIn : setTargetLocationOut;
+  const setLocation = isInTab ? setTargetLocationIn : setTargetLocationOut;
 
   const displayPalletIn = selectedPalletIn
     ? `${selectedPalletIn.id} (${selectedPalletIn.desc})`
@@ -300,6 +348,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
     ? `${selectedPalletOut.id} (${selectedPalletOut.desc})`
     : palletQROut || "미입력";
 
+  // ----------------- JSX -----------------
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl w-[960px] max-h-[90vh] flex flex-col">
@@ -368,7 +417,6 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                     onChange={(e) => {
                       setPalletQRIn(e.target.value);
                       setSelectedPalletIn(null);
-                      setShowPalletSuggestionsIn(true);
                     }}
                   />
                   <button
@@ -379,26 +427,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                   </button>
                 </div>
 
-                {/* 파렛트 자동완성 리스트 (입고) */}
-                {!selectedPalletIn && palletSuggestionsIn.length > 0 && (
-                  <div className="mt-1 border rounded-md bg-white shadow p-2 max-h-32 overflow-auto text-xs">
-                    {palletSuggestionsIn.map((p) => (
-                      <div
-                        key={p.id}
-                        onClick={() => {
-                          setPalletQRIn(p.id);
-                          setSelectedPalletIn(p);   // ✅ 선택 저장
-                        }}
-                        className="px-2 py-1 hover:bg-gray-100 cursor-pointer"
-                      >
-                        <span className="font-mono font-semibold">{p.id}</span>
-                        <span className="ml-2 text-gray-600">{p.desc}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* ✅ 선택된 파렛트 표시 */}
+                {/* 선택된 파렛트 표시 */}
                 <div className="mt-1 text-[11px] text-gray-600">
                   {selectedPalletIn ? (
                     <>
@@ -422,6 +451,23 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                       선택된 파렛트가 없습니다.
                     </span>
                   )}
+                </div>
+
+                {/* 간단 자동완성 (입고 탭도 필요하면 여기에 추가 가능) */}
+                <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-gray-500">
+                  {PALLET_MASTER.slice(0, 3).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="rounded-full border border-gray-200 px-2 py-0.5 hover:bg-gray-50"
+                      onClick={() => {
+                        setSelectedPalletIn(p);
+                        setPalletQRIn(p.id);
+                      }}
+                    >
+                      {p.id}
+                    </button>
+                  ))}
                 </div>
               </section>
 
@@ -478,28 +524,9 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                     ))}
                   </div>
                 )}
-
-                {/* 선택된 상품 표시 */}
-                <div className="mt-1 text-[11px] text-gray-600">
-                  {selectedProductIn ? (
-                    <>
-                      선택된 상품:&nbsp;
-                      <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 font-mono text-[11px] text-blue-700">
-                        {selectedProductIn.code}
-                      </span>
-                      <span className="ml-1 text-gray-700">
-                        {selectedProductIn.name}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-gray-400">
-                      선택된 상품이 없습니다.
-                    </span>
-                  )}
-                </div>
               </section>
 
-              {/* 추가된 상품 목록 */}
+              {/* 입고 품목 목록 */}
               <section className="space-y-1.5 flex-1 min-h-[160px]">
                 <h3 className="text-xs font-semibold text-gray-700">
                   입고 품목 목록
@@ -556,7 +583,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
               </section>
             </div>
 
-            {/* 오른쪽: 미리보기 */}
+            {/* 오른쪽: 입고 미리보기 + 기존 파렛트 재고 + 입고 버튼 */}
             <div className="w-[42%] flex flex-col border-l pl-4">
               <h3 className="text-xs font-semibold text-gray-700 mb-2">
                 이번 입고 지시 미리보기
@@ -567,9 +594,35 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                   <span className="font-semibold">{displayPalletIn}</span>
                 </p>
                 <p>
-                  위치:{" "}
+                  위치(이송 예정):{" "}
                   <span className="font-semibold">{targetLocationIn}</span>
                 </p>
+                <hr className="my-1" />
+
+                {/* 기존 파렛트 재고 */}
+                <p className="font-semibold mb-1">현재 파렛트 적재 품목</p>
+                {currentInStock.length === 0 ? (
+                  <p className="text-gray-400 mb-2">
+                    선택된 파렛트의 기존 적재 품목이 없습니다.
+                  </p>
+                ) : (
+                  <ul className="mb-2 list-disc pl-4 space-y-0.5">
+                    {currentInStock.map((s) => (
+                      <li key={`${s.palletId}-${s.code}`}>
+                        {s.name}({s.code}) – BOX{" "}
+                        <span className="font-semibold">
+                          {s.boxQty.toLocaleString()}
+                        </span>
+                        , 총{" "}
+                        <span className="font-semibold">
+                          {s.eaQty.toLocaleString()}
+                        </span>{" "}
+                        EA
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
                 <hr className="my-1" />
                 <p className="font-semibold mb-1">입고 품목</p>
                 {itemsIn.length === 0 ? (
@@ -582,6 +635,17 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                     </p>
                   ))
                 )}
+
+                {/* 오른쪽 아래 노란 동그라미 자리 – [입고] 버튼 */}
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    className="rounded-full bg-emerald-600 px-4 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                    onClick={handleReceiveOnlyIn}
+                  >
+                    입고
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -603,7 +667,6 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                     onChange={(e) => {
                       setPalletQROut(e.target.value);
                       setSelectedPalletOut(null);
-                      setShowPalletSuggestionsOut(true);
                     }}
                   />
                   <button
@@ -614,26 +677,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                   </button>
                 </div>
 
-                {/* 파렛트 자동완성 리스트 (출고) */}
-                {!selectedPalletOut && palletSuggestionsOut.length > 0 && (
-                  <div className="mt-1 border rounded-md bg-white shadow p-2 max-h-32 overflow-auto text-xs">
-                    {palletSuggestionsOut.map((p) => (
-                      <div
-                        key={p.id}
-                        onClick={() => {
-                          setPalletQROut(p.id);
-                          setSelectedPalletOut(p);
-                        }}
-                        className="px-2 py-1 hover:bg-gray-100 cursor-pointer"
-                      >
-                        <span className="font-mono font-semibold">{p.id}</span>
-                        <span className="ml-2 text-gray-600">{p.desc}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* ✅ 선택된 파렛트 표시 (출고) */}
+                {/* 선택된 파렛트 표시 (출고) */}
                 <div className="mt-1 text-[11px] text-gray-600">
                   {selectedPalletOut ? (
                     <>
@@ -659,16 +703,25 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  className="mt-2 px-3 py-1.5 rounded-full bg-slate-700 text-xs text-white hover:bg-slate-800"
-                  onClick={handleLoadSampleOut}
-                >
-                  예시 데이터 불러오기
-                </button>
+                {/* 간단 선택 버튼으로도 파렛트 선택 가능 */}
+                <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-gray-500">
+                  {PALLET_MASTER.slice(0, 3).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="rounded-full border border-gray-200 px-2 py-0.5 hover:bg-gray-50"
+                      onClick={() => {
+                        setSelectedPalletOut(p);
+                        setPalletQROut(p.id);
+                      }}
+                    >
+                      {p.id}
+                    </button>
+                  ))}
+                </div>
               </section>
 
-              {/* 출고 품목 목록 */}
+              {/* 출고 품목 목록 (현재 파렛트 적재 + 박스/전체수량 + 출고수량 입력) */}
               <section className="space-y-1.5 flex-1 min-h-[160px]">
                 <h3 className="text-xs font-semibold text-gray-700">
                   출고 품목 목록
@@ -677,8 +730,12 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50 text-gray-600">
                       <tr>
-                        <th className="px-2 py-2 text-left w-28">상품코드</th>
+                        <th className="px-2 py-2 text-left w-24">상품코드</th>
                         <th className="px-2 py-2 text-left">상품명</th>
+                        <th className="px-2 py-2 text-right w-20">BOX</th>
+                        <th className="px-2 py-2 text-right w-24">
+                          전체수량(EA)
+                        </th>
                         <th className="px-2 py-2 text-center w-28">
                           출고수량(EA)
                         </th>
@@ -689,9 +746,9 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                         <tr>
                           <td
                             className="px-3 py-4 text-center text-gray-400 text-xs"
-                            colSpan={3}
+                            colSpan={5}
                           >
-                            아직 불러온 출고 품목이 없습니다.
+                            현재 파렛트에 적재된 품목이 없습니다.
                           </td>
                         </tr>
                       ) : (
@@ -705,6 +762,12 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                             </td>
                             <td className="px-2 py-2 text-gray-700">
                               {it.name}
+                            </td>
+                            <td className="px-2 py-2 text-right">
+                              {it.boxQty?.toLocaleString() ?? "-"}
+                            </td>
+                            <td className="px-2 py-2 text-right">
+                              {it.totalQty?.toLocaleString() ?? "-"}
                             </td>
                             <td className="px-2 py-1 text-center">
                               <input
@@ -737,21 +800,21 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                 </p>
                 <p>
                   이동 위치:{" "}
-                  <span className="font-semibold">
-                    {targetLocationOut}
-                  </span>
+                  <span className="font-semibold">{targetLocationOut}</span>
                 </p>
                 <hr className="my-1" />
                 <p className="font-semibold mb-1">출고 품목</p>
                 {itemsOut.length === 0 ? (
                   <p className="text-gray-400">
-                    아직 추가된 출고 품목이 없습니다.
+                    아직 출고 가능한 품목이 없습니다.
                   </p>
                 ) : (
                   itemsOut.map((it) => (
                     <p key={it.id}>
-                      • {it.name}({it.code}){" "}
-                      <span className="font-semibold">{it.qty} EA</span>
+                      • {it.name}({it.code}) – 현재{" "}
+                      {it.totalQty?.toLocaleString() ?? "-"} EA 중{" "}
+                      <span className="font-semibold">{it.qty} EA</span> 출고
+                      예정
                     </p>
                   ))
                 )}
@@ -791,9 +854,9 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
             {isInTab ? (
               <button
                 className="px-4 py-1.5 rounded-full bg-blue-600 text-white text-xs hover:bg-blue-700"
-                onClick={handleSubmitIn}
+                onClick={handleMoveIn}
               >
-                입고 / 이송 지시
+                이송 지시
               </button>
             ) : (
               <button
