@@ -54,7 +54,10 @@ export function OrderDetail({
     if (items.length === 0) return;
 
     onSelectItemForPreview(items[0]);
-  }, [items, onSelectItemForPreview]);
+    // onSelectItemForPreview 는 매 렌더마다 새로 만들어지므로
+    // deps 에 넣으면 무한루프가 나서 제외한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
 
   // 피킹창고 부족 여부
   const hasLowStock = useMemo(

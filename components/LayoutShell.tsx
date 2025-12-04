@@ -19,7 +19,7 @@ export function LayoutShell({ children }: LayoutShellProps) {
   return (
     <div className="layout-root">
       {/* 상단 네비게이션 바 */}
-      <header className="top-navbar">
+      <header className="top-navbar relative z-30">
         {/* 왼쪽 : 타이틀 + 메뉴 */}
         <div className="flex flex-1 items-center gap-6">
           <Link href="/" className="navbar-title">
@@ -166,7 +166,9 @@ export function LayoutShell({ children }: LayoutShellProps) {
       </header>
 
       {/* 본문 */}
-      <main className="main-content">{children}</main>
+      <main className="main-content relative z-0">
+        {children}
+      </main>
 
       {/* 공통 모달 */}
       <RobotProductCallModal
