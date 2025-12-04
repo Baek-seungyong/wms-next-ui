@@ -110,6 +110,10 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
     useState<ProductMaster | null>(null);
   const [showSuggestionsIn, setShowSuggestionsIn] = useState(false);
 
+  // 👉 파렛트 자동완성(입고)
+  const [showPalletSuggestionsIn, setShowPalletSuggestionsIn] =
+    useState(false);
+
   // ----------------- 출고 탭 상태 -----------------
   const [palletQROut, setPalletQROut] = useState("");
   const [selectedPalletOut, setSelectedPalletOut] =
@@ -117,6 +121,10 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
   const [itemsOut, setItemsOut] = useState<ReceivingItem[]>([]);
   const [targetLocationOut, setTargetLocationOut] =
     useState<"피킹" | "2-1" | "3-1">("피킹");
+
+  // 👉 파렛트 자동완성(출고)
+  const [showPalletSuggestionsOut, setShowPalletSuggestionsOut] =
+    useState(false);
 
   // ----------------- 공통 초기화 -----------------
   const resetAll = () => {
@@ -129,11 +137,13 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
     setTargetLocationIn("피킹");
     setSelectedProductIn(null);
     setShowSuggestionsIn(false);
+    setShowPalletSuggestionsIn(false);
     // 출고
     setPalletQROut("");
     setSelectedPalletOut(null);
     setItemsOut([]);
     setTargetLocationOut("피킹");
+    setShowPalletSuggestionsOut(false);
   };
 
   /** 🔹 모달 닫힐 때 내부 상태 초기화 */
@@ -143,7 +153,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
     }
   }, [open]);
 
-  /** 🔹 입고: 검색어 기준 자동완성 리스트 */
+  /** 🔹 입고: 검색어 기준 자동완성 리스트 (제품) */
   const productSuggestionsIn = useMemo(() => {
     const q = searchTextIn.trim();
     if (!q) return [];
@@ -155,6 +165,32 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
         p.name.toLowerCase().includes(lower),
     );
   }, [searchTextIn]);
+
+  /** 🔹 입고: 파렛트 자동완성 리스트 */
+  const palletSuggestionsIn = useMemo(() => {
+    const q = palletQRIn.trim();
+    if (!q) return [];
+    const upper = q.toUpperCase();
+    const lower = q.toLowerCase();
+    return PALLET_MASTER.filter(
+      (p) =>
+        p.id.toUpperCase().includes(upper) ||
+        p.desc.toLowerCase().includes(lower),
+    );
+  }, [palletQRIn]);
+
+  /** 🔹 출고: 파렛트 자동완성 리스트 */
+  const palletSuggestionsOut = useMemo(() => {
+    const q = palletQROut.trim();
+    if (!q) return [];
+    const upper = q.toUpperCase();
+    const lower = q.toLowerCase();
+    return PALLET_MASTER.filter(
+      (p) =>
+        p.id.toUpperCase().includes(upper) ||
+        p.desc.toLowerCase().includes(lower),
+    );
+  }, [palletQROut]);
 
   /** 🔹 입고: 선택된 파렛트의 현재 적재 목록 */
   const currentInStock = useMemo(() => {
@@ -404,7 +440,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
           <div className="flex-1 flex px-5 py-4 gap-4 overflow-hidden text-sm">
             {/* 왼쪽: 입력 영역 */}
             <div className="w-[58%] flex flex-col gap-4">
-              {/* 파렛트 번호 */}
+              {/* 파렛트 번호 (입고) */}
               <section className="space-y-1.5">
                 <h3 className="text-xs font-semibold text-gray-700">
                   파렛트번호 (QR코드)
@@ -415,17 +451,45 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                     placeholder="QR 스캔 또는 직접 입력 (예: PLT-1234)"
                     value={palletQRIn}
                     onChange={(e) => {
-                      setPalletQRIn(e.target.value);
+                      const v = e.target.value;
+                      setPalletQRIn(v);
                       setSelectedPalletIn(null);
+                      setShowPalletSuggestionsIn(!!v);
                     }}
                   />
                   <button
                     type="button"
                     className="px-3 py-2 rounded-md bg-gray-800 text-white text-xs"
+                    onClick={() => {
+                      alert("QR 스캔 기능은 추후 연동 예정입니다. (데모)");
+                    }}
                   >
                     QR 스캔
                   </button>
                 </div>
+
+                {/* 파렛트 자동완성 리스트 (입고) */}
+                {showPalletSuggestionsIn && palletSuggestionsIn.length > 0 && (
+                  <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px] shadow-sm">
+                    {palletSuggestionsIn.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setPalletQRIn(p.id);
+                          setSelectedPalletIn(p);
+                          setShowPalletSuggestionsIn(false);
+                        }}
+                        className="flex w-full items-center justify-between px-2 py-1 text-left hover:bg-gray-100"
+                      >
+                        <span className="font-mono">{p.id}</span>
+                        <span className="ml-2 text-gray-600 flex-1 truncate">
+                          {p.desc}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* 선택된 파렛트 표시 */}
                 <div className="mt-1 text-[11px] text-gray-600">
@@ -451,23 +515,6 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                       선택된 파렛트가 없습니다.
                     </span>
                   )}
-                </div>
-
-                {/* 간단 자동완성 (입고 탭도 필요하면 여기에 추가 가능) */}
-                <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-gray-500">
-                  {PALLET_MASTER.slice(0, 3).map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="rounded-full border border-gray-200 px-2 py-0.5 hover:bg-gray-50"
-                      onClick={() => {
-                        setSelectedPalletIn(p);
-                        setPalletQRIn(p.id);
-                      }}
-                    >
-                      {p.id}
-                    </button>
-                  ))}
                 </div>
               </section>
 
@@ -497,7 +544,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                   </button>
                 </div>
 
-                {/* 자동완성 리스트 */}
+                {/* 자동완성 리스트 (제품) */}
                 {showSuggestionsIn && productSuggestionsIn.length > 0 && (
                   <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px] shadow-sm">
                     {productSuggestionsIn.map((p) => (
@@ -636,7 +683,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                   ))
                 )}
 
-                {/* 오른쪽 아래 노란 동그라미 자리 – [입고] 버튼 */}
+                {/* 오른쪽 아래 [입고] 버튼 */}
                 <div className="mt-4 flex justify-end">
                   <button
                     type="button"
@@ -665,17 +712,46 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                     placeholder="QR 스캔 또는 직접 입력 (예: PLT-1234)"
                     value={palletQROut}
                     onChange={(e) => {
-                      setPalletQROut(e.target.value);
+                      const v = e.target.value;
+                      setPalletQROut(v);
                       setSelectedPalletOut(null);
+                      setShowPalletSuggestionsOut(!!v);
                     }}
                   />
                   <button
                     type="button"
                     className="px-3 py-2 rounded-md bg-gray-800 text-white text-xs"
+                    onClick={() => {
+                      alert("QR 스캔 기능은 추후 연동 예정입니다. (데모)");
+                    }}
                   >
                     QR 스캔
                   </button>
                 </div>
+
+                {/* 파렛트 자동완성 리스트 (출고) */}
+                {showPalletSuggestionsOut &&
+                  palletSuggestionsOut.length > 0 && (
+                    <div className="mt-1 max-h-32 overflow-y-auto rounded border bg-white text-[11px] shadow-sm">
+                      {palletSuggestionsOut.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setPalletQROut(p.id);
+                            setSelectedPalletOut(p);
+                            setShowPalletSuggestionsOut(false);
+                          }}
+                          className="flex w-full items-center justify-between px-2 py-1 text-left hover:bg-gray-100"
+                        >
+                          <span className="font-mono">{p.id}</span>
+                          <span className="ml-2 text-gray-600 flex-1 truncate">
+                            {p.desc}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                 {/* 선택된 파렛트 표시 (출고) */}
                 <div className="mt-1 text-[11px] text-gray-600">
@@ -701,23 +777,6 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                       선택된 파렛트가 없습니다.
                     </span>
                   )}
-                </div>
-
-                {/* 간단 선택 버튼으로도 파렛트 선택 가능 */}
-                <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-gray-500">
-                  {PALLET_MASTER.slice(0, 3).map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="rounded-full border border-gray-200 px-2 py-0.5 hover:bg-gray-50"
-                      onClick={() => {
-                        setSelectedPalletOut(p);
-                        setPalletQROut(p.id);
-                      }}
-                    >
-                      {p.id}
-                    </button>
-                  ))}
                 </div>
               </section>
 
