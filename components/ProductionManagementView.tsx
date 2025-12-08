@@ -63,8 +63,9 @@ export default function ProductionManagementView() {
     memo?: string;
   } | null>(null);
 
-  // 검색 필터
-  const [historySearch, setHistorySearch] = useState("");
+  // ───── 라벨 내역 검색 필터 ─────
+  const [historySearch, setHistorySearch] = useState(""); // 코드/상품명/LOT
+  const [historyDate, setHistoryDate] = useState(""); // 생산일자
 
   // ───── 파생 값 ─────
   const selectedProduct = useMemo(
@@ -81,16 +82,28 @@ export default function ProductionManagementView() {
     );
   }, [searchProductText]);
 
+  // ■■■ 라벨 내역 필터링: 생산일자 + 코드/상품명/LOT ■■■
   const filteredLabels = useMemo(() => {
-    if (!historySearch.trim()) return labels;
+    let result = labels;
+
+    // 날짜 필터
+    if (historyDate) {
+      result = result.filter((l) => l.date === historyDate);
+    }
+
+    // 텍스트 필터
     const q = historySearch.trim().toLowerCase();
-    return labels.filter(
-      (l) =>
-        l.productCode.toLowerCase().includes(q) ||
-        l.productName.toLowerCase().includes(q) ||
-        l.lotNo.toLowerCase().includes(q),
-    );
-  }, [labels, historySearch]);
+    if (q) {
+      result = result.filter(
+        (l) =>
+          l.productCode.toLowerCase().includes(q) ||
+          l.productName.toLowerCase().includes(q) ||
+          l.lotNo.toLowerCase().includes(q),
+      );
+    }
+
+    return result;
+  }, [labels, historyDate, historySearch]);
 
   const selectedLabel = useMemo(
     () => labels.find((l) => l.id === selectedLabelId) ?? null,
@@ -183,7 +196,6 @@ export default function ProductionManagementView() {
     setLabelModalOpen(true);
   };
 
-  // 상단 버튼에서 사용하던 공용 출력이 필요 없으면 남겨둬도 되고, 안 쓰니 걍 두긴 함
   const handlePrintLabel = () => {
     if (!selectedLabel) {
       alert("라벨을 출력할 내역을 먼저 선택해 주세요.");
@@ -352,13 +364,20 @@ export default function ProductionManagementView() {
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold">박스 라벨 내역</h2>
             <div className="flex items-center gap-2">
+              {/* 생산일자 검색 */}
               <input
-                className="w-44 rounded-md border px-2 py-1 text-[12px]"
-                placeholder="상품코드 / LOT 검색"
+                type="date"
+                className="w-40 rounded-md border px-2 py-1 text-[12px]"
+                value={historyDate}
+                onChange={(e) => setHistoryDate(e.target.value)}
+              />
+              {/* 코드 / 상품명 / LOT 검색 */}
+              <input
+                className="w-52 rounded-md border px-2 py-1 text-[12px]"
+                placeholder="상품코드 / 상품명 / LOT 검색"
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
               />
-              {/* 상단 공통 라벨 출력 버튼은 제거 */}
             </div>
           </div>
 
@@ -404,7 +423,7 @@ export default function ProductionManagementView() {
                         {label.lotNo}
                       </td>
 
-                      {/* 수정 버튼 (왼쪽) */}
+                      {/* 수정 버튼 */}
                       <td
                         className="border-t px-3 py-2 text-center"
                         onClick={(e) => e.stopPropagation()}
@@ -418,7 +437,7 @@ export default function ProductionManagementView() {
                         </button>
                       </td>
 
-                      {/* 라벨 출력 버튼 (맨 오른쪽) */}
+                      {/* 라벨 출력 버튼 */}
                       <td
                         className="border-t px-3 py-2 text-center"
                         onClick={(e) => e.stopPropagation()}
@@ -440,7 +459,7 @@ export default function ProductionManagementView() {
                       colSpan={7}
                       className="border-t px-3 py-4 text-center text-[12px] text-gray-400"
                     >
-                      생성된 라벨 내역이 없습니다.
+                      조건에 맞는 라벨 내역이 없습니다.
                     </td>
                   </tr>
                 )}

@@ -384,6 +384,17 @@ export function PalletDirectTransferModal({
               </div>
             )}
 
+            {/* 🔽 파렛트 선택 → 도착 위치 선택 방향 화살표 (설정 모드에서만 표시) */}
+            {!isStatusMode && (
+              <div className="flex items-center justify-center text-gray-300">
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="h-px w-10 bg-gray-300" />
+                  <span className="text-xl text-gray-500 leading-none">↓</span>
+                  <span className="h-px w-10 bg-gray-300" />
+                </div>
+              </div>
+            )}
+
             {/* 존 / 위치 선택 or 표시 */}
             <div className="flex-1 overflow-y-auto rounded-xl border bg-gray-50/80 p-3">
               <p className="mb-2 text-xs font-semibold text-gray-800">

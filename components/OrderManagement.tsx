@@ -15,24 +15,86 @@ const PRODUCT_IMAGE_MAP: Record<string, string> = {
   "L-009": "/images/products/L-009.png",
 };
 
+type ZoneFilter = "ALL" | "수도권" | "비수도권" | "차량출고";
+
 // 기본 주문 데이터
 const baseOrders: Order[] = [
-  { id: "ORD-251114-01", customer: "온라인몰 A", dueDate: "2025-11-15", status: "대기", zone: "수도권" },
-  { id: "ORD-251114-02", customer: "B몰",       dueDate: "2025-11-15", status: "보류", zone: "비수도권" },
-  { id: "ORD-251114-03", customer: "C도매",     dueDate: "2025-11-16", status: "출고중", zone: "수도권" },
-  { id: "ORD-251113-11", customer: "D연구소",   dueDate: "2025-11-20", status: "완료", zone: "차량출고" },
-  { id: "ORD-251115-01", customer: "온라인몰 B", dueDate: "2025-11-17", status: "대기", zone: "수도권" },
-  { id: "ORD-251115-02", customer: "E도매",     dueDate: "2025-11-17", status: "출고중", zone: "비수도권" },
-  { id: "ORD-251115-03", customer: "F식자재",   dueDate: "2025-11-18", status: "보류", zone: "차량출고" },
-  { id: "ORD-251116-01", customer: "온라인몰 C", dueDate: "2025-11-18", status: "대기", zone: "수도권" },
-  { id: "ORD-251116-02", customer: "G도매",     dueDate: "2025-11-19", status: "완료", zone: "비수도권" },
-  { id: "ORD-251116-03", customer: "H연구소",   dueDate: "2025-11-19", status: "출고중", zone: "차량출고" },
+  {
+    id: "ORD-251114-01",
+    customer: "온라인몰 A",
+    dueDate: "2025-11-15",
+    status: "대기",
+    zone: "수도권",
+  },
+  {
+    id: "ORD-251114-02",
+    customer: "B몰",
+    dueDate: "2025-11-15",
+    status: "보류",
+    zone: "비수도권",
+  },
+  {
+    id: "ORD-251114-03",
+    customer: "C도매",
+    dueDate: "2025-11-16",
+    status: "출고중",
+    zone: "수도권",
+  },
+  {
+    id: "ORD-251113-11",
+    customer: "D연구소",
+    dueDate: "2025-11-20",
+    status: "완료",
+    zone: "차량출고",
+  },
+  {
+    id: "ORD-251115-01",
+    customer: "온라인몰 B",
+    dueDate: "2025-11-17",
+    status: "대기",
+    zone: "수도권",
+  },
+  {
+    id: "ORD-251115-02",
+    customer: "E도매",
+    dueDate: "2025-11-17",
+    status: "출고중",
+    zone: "비수도권",
+  },
+  {
+    id: "ORD-251115-03",
+    customer: "F식자재",
+    dueDate: "2025-11-18",
+    status: "보류",
+    zone: "차량출고",
+  },
+  {
+    id: "ORD-251116-01",
+    customer: "온라인몰 C",
+    dueDate: "2025-11-18",
+    status: "대기",
+    zone: "수도권",
+  },
+  {
+    id: "ORD-251116-02",
+    customer: "G도매",
+    dueDate: "2025-11-19",
+    status: "완료",
+    zone: "비수도권",
+  },
+  {
+    id: "ORD-251116-03",
+    customer: "H연구소",
+    dueDate: "2025-11-19",
+    status: "출고중",
+    zone: "차량출고",
+  },
 ];
 
 // 기본 품목 데이터
 const baseItems: OrderItem[] = [
-  { code: "P-001", name: "PET 500ml 투명",   orderQty: 100, stockQty: 150 },
-  { code: "P-013", name: "PET 1L 반투명",   orderQty: 50,  stockQty: 20,  lowStock: true },
+  { code: "P-001", name: "PET 500ml 투명", orderQty: 100, stockQty: 150 },
+  { code: "P-013", name: "PET 1L 반투명", orderQty: 50, stockQty: 20, lowStock: true },
   { code: "C-201", name: "캡 28파이 화이트", orderQty: 100, stockQty: 500 },
   { code: "L-009", name: "라벨 500ml 화이트", orderQty: 100, stockQty: 80 },
 ];
@@ -58,6 +120,9 @@ export default function OrderManagement() {
     orders[0]?.id ?? "",
   );
 
+  // 🔸 출고 구분 필터 (수도권 / 비수도권 / 차량출고)
+  const [zoneFilter, setZoneFilter] = useState<ZoneFilter>("ALL");
+
   // 🔸 긴급 호출 모달
   const [robotModalOpen, setRobotModalOpen] = useState(false);
 
@@ -67,10 +132,22 @@ export default function OrderManagement() {
     name: string;
   } | null>(null);
 
-  const activeOrder = useMemo(
-    () => orders.find((o) => o.id === activeOrderId) ?? orders[0],
-    [orders, activeOrderId],
-  );
+  // 필터링된 주문 목록
+  const visibleOrders = useMemo(() => {
+    if (zoneFilter === "ALL") return orders;
+    return orders.filter((o) => o.zone === zoneFilter);
+  }, [orders, zoneFilter]);
+
+  // 현재 활성 주문 (필터 고려)
+  const activeOrder = useMemo(() => {
+    if (visibleOrders.length === 0) return orders[0];
+    return (
+      visibleOrders.find((o) => o.id === activeOrderId) ??
+      visibleOrders[0] ??
+      orders[0]
+    );
+  }, [visibleOrders, activeOrderId, orders]);
+
   const activeItems = itemsByOrderId[activeOrder?.id ?? ""] ?? [];
 
   // 상태 변경
@@ -95,6 +172,20 @@ export default function OrderManagement() {
     const firstItem = itemsByOrderId[id]?.[0];
     if (firstItem) {
       setPreviewProduct({ code: firstItem.code, name: firstItem.name });
+    }
+  };
+
+  // 필터 탭에서 존 변경 시, 현재 필터에서 첫 주문을 자동 선택
+  const handleChangeZoneFilter = (zone: ZoneFilter) => {
+    setZoneFilter(zone);
+    const nextList =
+      zone === "ALL" ? orders : orders.filter((o) => o.zone === zone);
+    if (nextList.length > 0) {
+      setActiveOrderId(nextList[0].id);
+      const firstItem = itemsByOrderId[nextList[0].id]?.[0];
+      if (firstItem) {
+        setPreviewProduct({ code: firstItem.code, name: firstItem.name });
+      }
     }
   };
 
@@ -184,9 +275,41 @@ export default function OrderManagement() {
 
       {/* 본문 영역 : 주문서 목록 + 주문 상세 + 우측 이미지 프리뷰 */}
       <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-4">
+        {/* 왼쪽: 주문서 목록 + 존 필터 탭 */}
+        <div className="col-span-4 flex flex-col gap-2">
+          {/* 출고 구분 탭 */}
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[11px] text-gray-500">출고 구분</span>
+            <div className="flex gap-2 mt-1">
+              {([
+                { key: "ALL", label: "전체" },
+                { key: "수도권", label: "수도권" },
+                { key: "비수도권", label: "비수도권" },
+                { key: "차량출고", label: "차량출고" },
+              ] as { key: ZoneFilter; label: string }[]).map((tab) => {
+                const active = zoneFilter === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => handleChangeZoneFilter(tab.key)}
+                    className={`px-4 py-1.5 rounded-full border text-xs transition
+                      ${
+                        active
+                          ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                          : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
+                      }
+                    `}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div> 
+          </div>
+
           <OrderList
-            orders={orders}
+            orders={visibleOrders}
             activeOrderId={activeOrderId}
             onSelectOrder={handleSelectOrder}
           />
@@ -221,14 +344,15 @@ export default function OrderManagement() {
                   코드: {previewProduct.code}
                 </div>
 
-                {/* 🔹 여기 박스 높이를 넉넉하게 주고 이미지가 꽉 차도록 */}
                 <div className="mt-4 flex-1">
                   <div className="flex h-[520px] w-full items-center justify-center rounded-2xl border bg-gray-50">
-                    <img
-                      src={`/images/products/${previewProduct.code}.png`}
-                      alt={previewProduct.name}
-                      className="h-full w-full object-contain"
-                    />
+                    {previewImageSrc && (
+                      <img
+                        src={previewImageSrc}
+                        alt={previewProduct.name}
+                        className="h-full w-full object-contain"
+                      />
+                    )}
                   </div>
                 </div>
               </>

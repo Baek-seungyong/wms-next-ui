@@ -4,12 +4,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 type Pallet = {
-  id: string;          // 파렛트 번호
+  id: string; // 파렛트 번호
   productCode: string; // 상품코드
   productName: string; // 상품명
-  location: string;    // 파렛트 위치
-  boxQty: number;      // 박스 수량
-  eaQty: number;       // 낱개 수량(EA)
+  location: string; // 파렛트 위치
+  boxQty: number; // 박스 수량
+  eaQty: number; // 낱개 수량(EA)
 };
 
 // 🔹 호출 위치 타입 추가
@@ -419,8 +419,11 @@ export function RobotProductCallModal({
     );
   };
 
-  // ✅ 모든 hook 이후에 open 체크
+  // ✅ open 체크
   if (!open) return null;
+
+  // 🔹 자동 호출 버튼 활성화 조건
+  const canAutoCall = hasSearched && searchResults.length > 0;
 
   // ---------------------- JSX ----------------------
   return (
@@ -490,16 +493,8 @@ export function RobotProductCallModal({
           {/* 좌측 : 검색 & 검색 결과 */}
           <div className="flex flex-col border rounded-xl bg-gray-50/60">
             <div className="px-3 py-2 border-b">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-gray-800">검색</p>
-                <button
-                  type="button"
-                  onClick={handleAutoCall}
-                  className="px-3 py-1 rounded-full text-[11px] border border-blue-500 text-blue-600 hover:bg-blue-50"
-                >
-                  자동 호출
-                </button>
-              </div>
+              <p className="mb-2 text-xs font-semibold text-gray-800">검색</p>
+
               <div className="flex items-center gap-2">
                 <input
                   value={searchTerm}
@@ -562,6 +557,18 @@ export function RobotProductCallModal({
                     선택된 상품이 없습니다. 위에서 상품을 선택해 주세요.
                   </span>
                 )}
+              </div>
+
+              {/* 🔵 자동 호출 버튼 (선택 안내 텍스트 아래) */}
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={handleAutoCall}
+                  disabled={!canAutoCall}
+                  className="px-3 py-1 rounded-full text-[11px] border border-blue-500 text-blue-600 hover:bg-blue-50 disabled:border-gray-200 disabled:text-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                >
+                  자동 호출
+                </button>
               </div>
             </div>
 

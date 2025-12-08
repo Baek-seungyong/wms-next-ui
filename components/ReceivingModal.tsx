@@ -12,9 +12,9 @@ type ReceivingItem = {
   id: number;
   code: string;
   name: string;
-  qty: number;        // 입고/출고 수량
-  boxQty?: number;    // 현재 박스 수량(출고 탭용)
-  totalQty?: number;  // 현재 전체 수량 EA(출고 탭용)
+  qty: number; // 입고/출고 수량
+  boxQty?: number; // 현재 박스 수량(출고 탭용)
+  totalQty?: number; // 현재 전체 수량 EA(출고 탭용)
 };
 
 type ProductMaster = {
@@ -311,7 +311,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
       [
         `[입고 후 AMR 이송 지시]`,
         `파렛트: ${palletTextIn}`,
-        `입고 위치: ${targetLocationIn}`,
+        `이송 위치: ${targetLocationIn}`, // 🔹 문구도 이송 위치로
         "",
         "입고 품목:",
         summary,
@@ -330,6 +330,42 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
     );
   };
 
+  /** 🔹 오른쪽 패널의 [출고] 버튼 (출고만 처리, 모달은 유지) */
+  const handleOutOnly = () => {
+    const validItems = itemsOut.filter((it) => it.qty > 0);
+    if (!selectedPalletOut && !palletQROut.trim()) {
+      alert("출고할 파렛트 번호(QR)를 입력해주세요.");
+      return;
+    }
+    if (validItems.length === 0) {
+      alert("출고 수량이 입력된 품목이 없습니다.");
+      return;
+    }
+
+    const palletTextOut = selectedPalletOut
+      ? `${selectedPalletOut.id} (${selectedPalletOut.desc})`
+      : palletQROut;
+
+    if (validItems.length === 1) {
+      const f = validItems[0];
+      alert(
+        `파렛트 ${palletTextOut}에서 ${f.name} 제품이 ${f.qty}개 출고 되었습니다.`,
+      );
+    } else {
+      const lines = validItems.map(
+        (it) => `• ${it.name}(${it.code}) ${it.qty}EA`,
+      );
+      alert(
+        [
+          `파렛트 ${palletTextOut}에서 아래 제품들이 출고 되었습니다.`,
+          "",
+          ...lines,
+        ].join("\n"),
+      );
+    }
+  };
+
+  /** 🔹 푸터의 [이송 지시] 버튼 (출고 탭: 출고 + 이송) */
   const handleSubmitOut = () => {
     const validItems = itemsOut.filter((it) => it.qty > 0);
     if (!selectedPalletOut && !palletQROut.trim()) {
@@ -345,11 +381,10 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
       ? `${selectedPalletOut.id} (${selectedPalletOut.desc})`
       : palletQROut;
 
-    // 🔔 요구사항: 수량 입력된 품목들만 모두 표시
     if (validItems.length === 1) {
       const f = validItems[0];
       alert(
-        `파렛트 ${palletTextOut}에서 ${f.name} 제품이 ${f.qty}개 출고 되었습니다.\n이동 위치: ${targetLocationOut}`,
+        `파렛트 ${palletTextOut}에서 ${f.name} 제품이 ${f.qty}개 출고 되었습니다.\n이송 위치: ${targetLocationOut}`,
       );
     } else {
       const lines = validItems.map(
@@ -358,7 +393,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
       alert(
         [
           `파렛트 ${palletTextOut}에서 아래 제품들이 출고 되었습니다.`,
-          `이동 위치: ${targetLocationOut}`,
+          `이송 위치: ${targetLocationOut}`,
           "",
           ...lines,
         ].join("\n"),
@@ -372,7 +407,8 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
   // ----------------- 공통 렌더링용 변수 -----------------
   const isInTab = activeTab === "IN";
 
-  const locationLabel = isInTab ? "입고 위치" : "이동 / 반납 위치";
+  // 🔹 위치 라벨은 탭 상관없이 항상 "이송 위치"
+  const locationLabel = "이송 위치";
   const locationValue = isInTab ? targetLocationIn : targetLocationOut;
   const setLocation = isInTab ? setTargetLocationIn : setTargetLocationOut;
 
@@ -847,7 +883,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
               </section>
             </div>
 
-            {/* 오른쪽: 출고 미리보기 */}
+            {/* 오른쪽: 출고 미리보기 + 출고 버튼 */}
             <div className="w-[42%] flex flex-col border-l pl-4">
               <h3 className="text-xs font-semibold text-gray-700 mb-2">
                 이번 출고 / 이송 지시 미리보기
@@ -858,7 +894,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                   <span className="font-semibold">{displayPalletOut}</span>
                 </p>
                 <p>
-                  이동 위치:{" "}
+                  이송 위치:{" "}
                   <span className="font-semibold">{targetLocationOut}</span>
                 </p>
                 <hr className="my-1" />
@@ -877,13 +913,25 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                     </p>
                   ))
                 )}
+
+                {/* 오른쪽 아래 [출고] 버튼 */}
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    className="rounded-full bg-emerald-600 px-4 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                    onClick={handleOutOnly}
+                  >
+                    출고
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* 푸터: 위치 선택 + 버튼 */}
-        <div className="flex items-center justify-between px-5 py-3 border-t bg-gray-50">
+        {/* 🔹 위치 선택과 버튼을 모두 오른쪽으로 모음 */}
+        <div className="flex items-center justify-end gap-4 px-5 py-3 border-t bg-gray-50">
           {/* 위치 선택 */}
           <div className="flex items-center gap-3 text-xs text-gray-800">
             <span className="font-semibold">{locationLabel}</span>
@@ -900,6 +948,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
             ))}
           </div>
 
+          {/* 버튼들 */}
           <div className="flex gap-2">
             <button
               className="px-3 py-1.5 rounded-full bg-white border border-gray-300 text-xs text-gray-700 hover:bg-gray-100"
@@ -922,7 +971,7 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                 className="px-4 py-1.5 rounded-full bg-blue-600 text-white text-xs hover:bg-blue-700"
                 onClick={handleSubmitOut}
               >
-                이송 지시 (출고)
+                이송 지시
               </button>
             )}
           </div>
