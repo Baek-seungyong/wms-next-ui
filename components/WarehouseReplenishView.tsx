@@ -181,8 +181,7 @@ const INITIAL_SHORTAGE_MAP: Record<string, ShortageRow> = INITIAL_SHORTAGES.redu
 export function WarehouseReplenishView() {
   const [activeWarehouse, setActiveWarehouse] =
     useState<WarehouseId>("피킹 창고");
-  const [shortages, setShortages] =
-    useState<ShortageRow[]>(INITIAL_SHORTAGES);
+  const [shortages, setShortages] = useState<ShortageRow[]>(INITIAL_SHORTAGES);
   const [markedItems, setMarkedItems] = useState<ReplenishMark[]>([]);
   const [focusedShortageId, setFocusedShortageId] = useState<string | null>(
     INITIAL_SHORTAGES[0]?.id ?? null,
@@ -392,8 +391,8 @@ export function WarehouseReplenishView() {
         ))}
       </div>
 
-      {/* 레이아웃 : 왼쪽 조금 줄이고 오른쪽 넓게 */}
-      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)]">
+      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+
         {/* ───────── 왼쪽 테이블 ───────── */}
         <section className="overflow-hidden rounded-2xl border bg-white p-4">
           <div className="mb-2 flex items-center justify-between">
@@ -509,20 +508,84 @@ export function WarehouseReplenishView() {
 
         {/* ───────── 오른쪽 패널 ───────── */}
         <section className="flex flex-col overflow-hidden rounded-2xl border bg-white p-4">
-          {/* 상단: 타이틀 + Tote 버튼 */}
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <div className="text-sm font-semibold">
-              {focusedShortage
-                ? `${focusedShortage.productCode} · ${focusedShortage.productName}`
-                : "보충 대상 품목"}
+          {/* 선택된 품목 타이틀 */}
+          <div className="mb-3 text-sm font-semibold">
+            {focusedShortage
+              ? `${focusedShortage.productCode} · ${focusedShortage.productName}`
+              : "보충 대상 품목을 왼쪽에서 선택해 주세요."}
+          </div>
+
+          {/* ① 보충 계획 확인 */}
+          <div className="mb-3 rounded-xl border bg-gray-50 px-4 py-3 text-[12px]">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold text-gray-800">
+                  보충 계획 확인
+                </span>
+              </div>
             </div>
-            {activeWarehouse === "피킹 창고" && (
-              <div className="flex gap-2 text-[12px]">
+
+            {!focusedShortage ? (
+              <div className="text-gray-400">
+                왼쪽 부족 재고 리스트에서 품목을 선택하면 보충 계획이 표시됩니다.
+              </div>
+            ) : (
+              <div className="space-y-1.5 text-[12px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">대상 창고</span>
+                  <span className="font-medium text-gray-800">
+                    {focusedShortage.warehouse}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">상위 창고 / 공급처</span>
+                  <span className="font-medium text-gray-800">
+                    {upperWarehouseLabel}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">상품코드</span>
+                  <span className="font-mono font-semibold text-gray-900">
+                    {focusedShortage.productCode}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">상품명</span>
+                  <span className="max-w-[220px] text-right font-semibold text-gray-900">
+                    {focusedShortage.productName}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">부족 수량</span>
+                  <span className="font-semibold text-red-600">
+                    {focusedShortage.shortageQty.toLocaleString()} EA
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ② Tote box 호출 */}
+          <div className="mb-3 rounded-xl border bg-gray-50 px-4 py-3 text-[12px]">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold text-gray-800">
+                  Tote box 호출
+                </span>
+              </div>
+            </div>
+
+            {activeWarehouse !== "피킹 창고" ? (
+              <div className="text-[11px] text-gray-500">
+                Tote box 호출은 피킹 창고 보충 시에만 사용됩니다.
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={handleCallTote}
                   disabled={!focusedShortage}
-                  className="rounded-full border border-gray-300 bg-white px-3 py-1 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:border-gray-200"
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-[12px] hover:bg-gray-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                 >
                   Tote box 호출
                 </button>
@@ -530,7 +593,7 @@ export function WarehouseReplenishView() {
                   type="button"
                   onClick={handleCallEmptyTote}
                   disabled={!focusedShortage}
-                  className="rounded-full border border-gray-300 bg-white px-3 py-1 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:border-gray-200"
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-[12px] hover:bg-gray-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                 >
                   빈 Tote box 호출
                 </button>
@@ -538,10 +601,14 @@ export function WarehouseReplenishView() {
             )}
           </div>
 
-          {/* 1단계: 파렛트 리스트 + 호출 버튼 */}
-          <div className="mb-4 flex-1 rounded-xl border bg-gray-50 p-3 text-[12px]">
+          {/* ③ 상위 창고 파렛트 호출 */}
+          <div className="mb-3 rounded-xl border bg-gray-50 p-3 text-[12px]">
             <div className="mb-2 flex items-center justify-between text-gray-700">
-              <div className="font-semibold">해당 상품 적재 파렛트</div>
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold">
+                  파렛트 호출
+                </span>
+              </div>
               <div className="text-[11px] text-gray-500">
                 선택된 파렛트:{" "}
                 <span className="font-semibold">
@@ -549,6 +616,7 @@ export function WarehouseReplenishView() {
                 </span>
               </div>
             </div>
+
             <div className="overflow-x-auto rounded-lg border bg-white">
               <table className="min-w-[520px] w-full border-collapse text-[12px]">
                 <thead>
@@ -599,7 +667,9 @@ export function WarehouseReplenishView() {
                       return (
                         <tr
                           key={p.id}
-                          className={checked ? "bg-blue-50" : "hover:bg-gray-50"}
+                          className={
+                            checked ? "bg-blue-50" : "hover:bg-gray-50"
+                          }
                         >
                           <td className="border px-2 py-1 text-center">
                             <input
@@ -647,142 +717,103 @@ export function WarehouseReplenishView() {
             </div>
           </div>
 
-          {/* 2단계: 보충 계획 + 수량 설정 */}
+          {/* ④ 수량 설정 */}
           <div className="rounded-xl border bg-gray-50 px-4 py-3 text-[12px]">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-[13px] font-semibold text-gray-800">
+                수량 설정
+              </span>
+            </div>
+
             {!focusedShortage ? (
               <div className="text-gray-400">
-                왼쪽에서 상품을 선택하면 보충 계획과 수량 설정을 할 수 있습니다.
+                보충할 품목을 선택하면 현재수량, 기준수량, 목표수량을 설정할 수
+                있습니다.
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {/* 보충 계획 카드 */}
-                <div className="rounded-lg border bg-white px-4 py-3">
-                  <div className="mb-2 text-[13px] font-semibold text-gray-800">
-                    보충 계획
+              <>
+                <div className="grid grid-cols-2 gap-3 text-[12px]">
+                  <div>
+                    <label className="mb-1 block text-gray-600">
+                      현재수량 (EA)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full rounded-md border px-2 py-1 text-right"
+                      value={focusedShortage.currentQty}
+                      onChange={(e) =>
+                        handleChangePlanField(
+                          focusedShortage.id,
+                          "currentQty",
+                          Number(e.target.value || 0),
+                        )
+                      }
+                    />
                   </div>
-                  <div className="space-y-1.5 text-[12px]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">대상 창고</span>
-                      <span className="font-medium text-gray-800">
-                        {focusedShortage.warehouse}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">상위 창고 / 공급처</span>
-                      <span className="font-medium text-gray-800">
-                        {upperWarehouseLabel}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">상품코드</span>
-                      <span className="font-mono font-semibold text-gray-900">
-                        {focusedShortage.productCode}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">상품명</span>
-                      <span className="max-w-[180px] text-right font-semibold text-gray-900">
-                        {focusedShortage.productName}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">부족 수량</span>
-                      <span className="font-semibold text-red-600">
-                        {focusedShortage.shortageQty.toLocaleString()} EA
-                      </span>
-                    </div>
+                  <div>
+                    <label className="mb-1 block text-gray-600">
+                      기준수량 (EA)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full rounded-md border px-2 py-1 text-right"
+                      value={focusedShortage.baseQty}
+                      onChange={(e) =>
+                        handleChangePlanField(
+                          focusedShortage.id,
+                          "baseQty",
+                          Number(e.target.value || 0),
+                        )
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-gray-600">
+                      목표수량 (EA)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full rounded-md border px-2 py-1 text-right"
+                      value={focusedShortage.targetQty}
+                      onChange={(e) =>
+                        handleChangePlanField(
+                          focusedShortage.id,
+                          "targetQty",
+                          Number(e.target.value || 0),
+                        )
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-gray-700 font-semibold">
+                      보충수량 (EA)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full rounded-md border border-emerald-500 bg-white px-2 py-1 text-right text-[13px] font-semibold text-emerald-700"
+                      value={focusedShortage.planQty}
+                      onChange={(e) =>
+                        handleChangePlanQty(
+                          focusedShortage.id,
+                          Number(e.target.value || 0),
+                        )
+                      }
+                    />
                   </div>
                 </div>
 
-                {/* 수량 설정 카드 */}
-                <div className="rounded-lg border bg-white px-4 py-3">
-                  <div className="mb-2 text-[13px] font-semibold text-gray-800">
-                    수량 설정
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-[12px]">
-                    <div>
-                      <label className="mb-1 block text-gray-600">
-                        현재수량 (EA)
-                      </label>
-                      <input
-                        type="number"
-                        className="w-full rounded-md border px-2 py-1 text-right"
-                        value={focusedShortage.currentQty}
-                        onChange={(e) =>
-                          handleChangePlanField(
-                            focusedShortage.id,
-                            "currentQty",
-                            Number(e.target.value || 0),
-                          )
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-gray-600">
-                        기준수량 (EA)
-                      </label>
-                      <input
-                        type="number"
-                        className="w-full rounded-md border px-2 py-1 text-right"
-                        value={focusedShortage.baseQty}
-                        onChange={(e) =>
-                          handleChangePlanField(
-                            focusedShortage.id,
-                            "baseQty",
-                            Number(e.target.value || 0),
-                          )
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-gray-600">
-                        목표수량 (EA)
-                      </label>
-                      <input
-                        type="number"
-                        className="w-full rounded-md border px-2 py-1 text-right"
-                        value={focusedShortage.targetQty}
-                        onChange={(e) =>
-                          handleChangePlanField(
-                            focusedShortage.id,
-                            "targetQty",
-                            Number(e.target.value || 0),
-                          )
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-gray-700 font-semibold">
-                        보충수량 (EA)
-                      </label>
-                      <input
-                        type="number"
-                        className="w-full rounded-md border border-emerald-500 bg-white px-2 py-1 text-right text-[13px] font-semibold text-emerald-700"
-                        value={focusedShortage.planQty}
-                        onChange={(e) =>
-                          handleChangePlanQty(
-                            focusedShortage.id,
-                            Number(e.target.value || 0),
-                          )
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-2 text-[11px] text-amber-700">
-                    ※ 현재수량 / 기준수량 / 목표수량을 수정하면 해당 상품의 기본
-                    설정 값도 함께 변경되는 것으로 처리됩니다. (데모 화면)
-                  </div>
-                  {hasPlanChanged && (
-                    <div className="mt-1 text-[11px] text-amber-600">
-                      · 기존 등록값과 다른 수량이 입력되어 있습니다.
-                    </div>
-                  )}
+                <div className="mt-2 text-[11px] text-amber-700">
+                  ※ 현재수량 / 기준수량 / 목표수량을 수정하면 해당 상품의 기본
+                  설정 값도 함께 변경되는 것으로 처리됩니다. (데모 화면)
                 </div>
-              </div>
+                {hasPlanChanged && (
+                  <div className="mt-1 text-[11px] text-amber-600">
+                    · 기존 등록값과 다른 수량이 입력되어 있습니다.
+                  </div>
+                )}
+              </>
             )}
           </div>
-
 
           {/* 하단: 보충완료 */}
           <div className="mt-4 flex justify-end">
