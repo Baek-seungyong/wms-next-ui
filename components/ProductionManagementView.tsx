@@ -15,6 +15,7 @@ type BoxLabelRecord = {
   productCode: string;
   productName: string;
   boxEa: number;
+  boxSpec: string; // 🔸 박스 규격
   lotNo: string;
   date: string;
   memo?: string;
@@ -24,6 +25,35 @@ const productMaster: Product[] = [
   { code: "P-1001", name: "PET 500ml 투명", boxEa: 100 },
   { code: "P-1002", name: "PET 300ml 밀키", boxEa: 120 },
   { code: "T-0020", name: "T20 트레이 20구", boxEa: 50 },
+];
+
+// 🔸 박스 규격 선택 옵션
+const BOX_SPEC_OPTIONS = [
+  "소 박스",
+  "중 박스",
+  "대 박스",
+  "특대 박스",
+  "5호 박스",
+  "4호 박스",
+  "3호 박스",
+  "3-1호 박스",
+  "3-2호 박스",
+  "3-3호 박스",
+  "2호 박스",
+  "2-1호 박스",
+  "2-2호 박스",
+  "2-3호 박스",
+  "2-4호 박스",
+  "A-0 박스",
+  "A-1 박스",
+  "A-2 박스",
+  "A-3 박스",
+  "A-4 박스",
+  "A-5 박스",
+  "A-6 박스",
+  "A-7 박스",
+  "A-8 박스",
+  "A-9 박스",
 ];
 
 function todayStr() {
@@ -40,6 +70,7 @@ export default function ProductionManagementView() {
   const [selectedProductCode, setSelectedProductCode] = useState<string | null>(
     null,
   );
+  const [boxSpecInput, setBoxSpecInput] = useState<string>(""); // 🔸 박스 규격
   const [boxEaInput, setBoxEaInput] = useState<number | "">("");
   const [prodDateInput, setProdDateInput] = useState<string>(todayStr());
   const [lotNoInput, setLotNoInput] = useState<string>("");
@@ -58,6 +89,7 @@ export default function ProductionManagementView() {
     productCode: string;
     productName: string;
     boxEa: number;
+    boxSpec: string;
     lotNo: string;
     date: string;
     memo?: string;
@@ -116,6 +148,7 @@ export default function ProductionManagementView() {
         productCode: selectedLabel.productCode,
         productName: selectedLabel.productName,
         boxEa: selectedLabel.boxEa,
+        boxSpec: selectedLabel.boxSpec,
         date: selectedLabel.date,
         lotNo: selectedLabel.lotNo,
         memo: selectedLabel.memo ?? "",
@@ -139,6 +172,9 @@ export default function ProductionManagementView() {
       setBoxEaInput("");
     }
 
+    // 박스 규격은 상품 선택 시에는 초기화만 (필요하면 나중에 상품별 기본값도 매핑 가능)
+    setBoxSpecInput("");
+
     // LOT 자동 생성
     const dateCompact = prodDateInput.replace(/-/g, "");
     const seq = (
@@ -156,6 +192,10 @@ export default function ProductionManagementView() {
   const handleCreateLabel = () => {
     if (!selectedProduct) {
       alert("상품을 먼저 선택해 주세요.");
+      return;
+    }
+    if (!boxSpecInput) {
+      alert("박스 규격을 선택해 주세요.");
       return;
     }
     if (boxEaInput === "" || Number(boxEaInput) <= 0) {
@@ -176,6 +216,7 @@ export default function ProductionManagementView() {
       productCode: selectedProduct.code,
       productName: selectedProduct.name,
       boxEa: Number(boxEaInput),
+      boxSpec: boxSpecInput,
       lotNo: lotNoInput,
       date: prodDateInput,
     };
@@ -211,6 +252,7 @@ export default function ProductionManagementView() {
       productCode: label.productCode,
       productName: label.productName,
       boxEa: label.boxEa,
+      boxSpec: label.boxSpec,
       lotNo: label.lotNo,
       date: label.date,
       memo: label.memo,
@@ -227,6 +269,7 @@ export default function ProductionManagementView() {
           ? {
               ...l,
               boxEa: editForm.boxEa,
+              boxSpec: editForm.boxSpec,
               lotNo: editForm.lotNo,
               date: editForm.date,
               memo: editForm.memo,
@@ -294,6 +337,25 @@ export default function ProductionManagementView() {
                   <span className="font-semibold">
                     {selectedProduct.name} ({selectedProduct.code})
                   </span>
+                </div>
+
+                {/* 🔸 박스 규격 (BOX당 내품수량 위) */}
+                <div className="mb-2">
+                  <label className="mb-1 inline-block w-24 text-[11px] text-gray-600">
+                    박스 규격
+                  </label>
+                  <select
+                    className="w-40 rounded-md border px-2 py-1 text-[12px]"
+                    value={boxSpecInput}
+                    onChange={(e) => setBoxSpecInput(e.target.value)}
+                  >
+                    <option value="">선택</option>
+                    {BOX_SPEC_OPTIONS.map((spec) => (
+                      <option key={spec} value={spec}>
+                        {spec}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="mb-2">
@@ -388,6 +450,7 @@ export default function ProductionManagementView() {
                   <th className="border-b px-3 py-2 text-left">생산일자</th>
                   <th className="border-b px-3 py-2 text-left">상품코드</th>
                   <th className="border-b px-3 py-2 text-left">상품명</th>
+                  <th className="border-b px-3 py-2 text-left">박스 규격</th>
                   <th className="border-b px-3 py-2 text-right">
                     BOX당 내품수량(EA)
                   </th>
@@ -416,6 +479,7 @@ export default function ProductionManagementView() {
                       <td className="border-t px-3 py-2">
                         {label.productName}
                       </td>
+                      <td className="border-t px-3 py-2">{label.boxSpec}</td>
                       <td className="border-t px-3 py-2 text-right">
                         {label.boxEa.toLocaleString()}
                       </td>
@@ -456,7 +520,7 @@ export default function ProductionManagementView() {
                 {filteredLabels.length === 0 && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="border-t px-3 py-4 text-center text-[12px] text-gray-400"
                     >
                       조건에 맞는 라벨 내역이 없습니다.
@@ -499,6 +563,12 @@ export default function ProductionManagementView() {
                 <span className="font-semibold">
                   {selectedLabel.productName}
                 </span>
+              </div>
+              <div className="mb-1 flex">
+                <span className="inline-block w-20 text-gray-500">
+                  박스 규격
+                </span>
+                <span>{selectedLabel.boxSpec}</span>
               </div>
               <div className="mb-1 flex">
                 <span className="inline-block w-20 text-gray-500">
@@ -580,6 +650,29 @@ export default function ProductionManagementView() {
             </div>
 
             <div className="space-y-2">
+              {/* 🔸 수정 모달 안 박스 규격 셀렉트 */}
+              <div>
+                <label className="mb-1 block text-[11px] text-gray-600">
+                  박스 규격
+                </label>
+                <select
+                  className="w-full rounded-md border px-2 py-1 text-[12px]"
+                  value={editForm.boxSpec}
+                  onChange={(e) =>
+                    setEditForm((prev) =>
+                      prev ? { ...prev, boxSpec: e.target.value } : prev,
+                    )
+                  }
+                >
+                  <option value="">선택</option>
+                  {BOX_SPEC_OPTIONS.map((spec) => (
+                    <option key={spec} value={spec}>
+                      {spec}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="mb-1 block text-[11px] text-gray-600">
                   BOX당 내품수량(EA)
