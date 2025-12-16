@@ -6,17 +6,7 @@ import { useMemo, useState } from "react";
 type ZoneId = "A" | "B" | "C" | "D";
 type TransferStatus = "이송중" | "완료";
 
-export type TransferInfo = {
-  status: "이송중" | "완료";
-  palletIds: string[];
-  destinationSlots: string[];
-
-  orderEaQty: number;        // 주문수량
-  transferEaQty: number;     // 지정이송 수량
-  remainingEaQty: number;    // 지정이송 후 잔량
-
-  residualOutboundEaQty?: number; // ✅ 잔량출고 누적 EA (추가)
-};
+import type { TransferInfo } from "./types";
 
 type Props = {
   open: boolean;
@@ -248,8 +238,8 @@ export function PalletDirectTransferModal({
       destinationSlots: selectedSlots,
 
       orderEaQty: orderEaQty ?? 0,
-      transferEaQty,
-      remainingEaQty,
+      transferEaQty: transferEaQty,
+      remainingEaQty: remainingEaQty,
     };
 
     onConfirmTransfer?.(transferInfo);

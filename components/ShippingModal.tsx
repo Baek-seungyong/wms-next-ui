@@ -1,23 +1,11 @@
-// components/PalletDirectTransferModal.tsx
+// components/ShippingModal.tsx
 "use client";
 
 import { useMemo, useState } from "react";
+import type { TransferInfo } from "./types";
 
 type ZoneId = "A" | "B" | "C" | "D";
 type TransferStatus = "이송중" | "완료";
-
-// 🔹 이 타입을 밖에서도 쓰고 싶으니까 export
-export type TransferInfo = {
-  status: TransferStatus;
-  fromLocation?: string;
-  palletIds: string[];
-  destinationSlots: string[];
-
-  // ✅ (추가) 표시용 수량 정보(선택/이송 현황 화면에서 사용)
-  //    optional로 둬서 기존 코드 깨지지 않게 함
-  orderEaQty?: number; // 주문수량(EA)
-  transferEaQty?: number; // 지정이송 수량(EA)
-};
 
 type Props = {
   open: boolean;
@@ -283,8 +271,9 @@ export function PalletDirectTransferModal({
       destinationSlots: selectedSlots,
 
       // ✅ 표시용 저장 (현황 화면에서 바로 쓰기 좋음)
-      orderEaQty: typeof orderEaQty === "number" ? orderEaQty : undefined,
+      orderEaQty: orderEaQty ?? 0,
       transferEaQty: selectedTransferEaQty,
+      remainingEaQty: (orderEaQty ?? 0) - selectedTransferEaQty,
     };
 
     onConfirmTransfer?.(transferInfo);
