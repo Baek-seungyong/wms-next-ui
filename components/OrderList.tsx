@@ -9,20 +9,32 @@ type Props = {
   orders: Order[];
   activeOrderId: string;
   onSelectOrder: (id: string) => void;
+
+  // ✅ 새로고침 버튼 눌렀을 때 부모에서 처리
+  onRefresh?: () => void;
 };
 
 export function OrderList({
   orders,
   activeOrderId,
   onSelectOrder,
+  onRefresh,
 }: Props): ReactElement {
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
       <div className="mb-3 flex items-center justify-between">
         <div className="text-xs text-gray-500">주문서 목록</div>
-        <div className="text-[11px] text-gray-400">
-          예시 데이터 {orders.length}건
-        </div>
+
+        {/* ✅ 예시 데이터 {n}건 제거 → 새로고침 버튼으로 교체 */}
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="rounded-full bg-blue-600 px-4 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          disabled={!onRefresh}
+          title={!onRefresh ? "onRefresh 콜백이 연결되지 않았습니다." : "새로고침"}
+        >
+          새로고침
+        </button>
       </div>
 
       <div className="flex-1 overflow-auto rounded-xl border bg-gray-50">
@@ -31,13 +43,14 @@ export function OrderList({
             <tr>
               <th className="border-b px-3 py-2 text-left">주문번호</th>
               <th className="border-b px-3 py-2 text-left">고객명</th>
-              {/* 납기일 컬럼 제거 */}
               <th className="border-b px-3 py-2 text-center">상태</th>
             </tr>
           </thead>
+
           <tbody>
             {orders.map((o) => {
               const active = o.id === activeOrderId;
+
               return (
                 <tr
                   key={o.id}
@@ -49,8 +62,11 @@ export function OrderList({
                   <td className="border-t px-3 py-2 font-mono text-[12px]">
                     {o.id}
                   </td>
-                  <td className="border-t px-3 py-2 text-[12px]">{o.customer}</td>
-                  {/* 상태 뱃지 */}
+                  <td className="border-t px-3 py-2 text-[12px]">
+                    {(o as any).customer}
+                  </td>
+
+                  {/* ✅ 상태 뱃지(보류 버튼 없음) */}
                   <td className="border-t px-3 py-2 text-center">
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] ${statusBadgeClass(
@@ -63,6 +79,7 @@ export function OrderList({
                 </tr>
               );
             })}
+
             {orders.length === 0 && (
               <tr>
                 <td

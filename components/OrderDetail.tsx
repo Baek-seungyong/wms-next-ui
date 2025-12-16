@@ -1,26 +1,31 @@
 // components/OrderDetail.tsx
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import type { ReactElement } from "react";
-import type { Order, OrderItem, OrderStatus } from "./types";
+import type {
+  Order,
+  OrderItem,
+  OrderStatus,
+  TransferInfo,
+  ResidualTransferInfo,
+  ResidualTransferPayload,
+} from "./types";
 import { statusBadgeClass } from "./types";
-import {
-  PalletDirectTransferModal,
-  type TransferInfo,
-} from "./PalletDirectTransferModal";
+import { PalletDirectTransferModal } from "./PalletDirectTransferModal";
 import {
   getReplenishMarks,
   toggleReplenishMark,
   type ReplenishMark,
 } from "@/utils/replenishMarkStore";
+import { OutboundResidualPrepModal } from "./OutboundResidualPrepModal";
+import { ResidualTransferModal } from "./ResidualTransferModal";
 
 type Props = {
   order: Order | null;
   items: OrderItem[];
   onChangeStatus?: (status: OrderStatus) => void;
   onComplete?: (newItems: OrderItem[]) => void;
-  // 👉 행 클릭 시 부모에서 이미지 프리뷰 띄우기 위한 콜백
   onSelectItemForPreview?: (item: OrderItem) => void;
 };
 
@@ -48,27 +53,14 @@ export function OrderDetail({
   onComplete,
   onSelectItemForPreview,
 }: Props): ReactElement | null {
-  // 🚩 주문이 바뀔 때 첫 번째 품목을 자동으로 프리뷰로 보내줌
-  useEffect(() => {
-    if (!onSelectItemForPreview) return;
-    if (items.length === 0) return;
-
-    onSelectItemForPreview(items[0]);
-    // onSelectItemForPreview 는 매 렌더마다 새로 만들어지므로
-    // deps 에 넣으면 무한루프가 나서 제외한다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
-
-  // 피킹창고 부족 여부
+  /* ================= 재고/경고 ================= */
   const hasLowStock = useMemo(
     () => items.some((i) => (i as any).lowStock),
     [items],
   );
 
-  // AMR 출발 위치
+  /* ================= AMR/위치 상태 ================= */
   const [amrRouteMap, setAmrRouteMap] = useState<Record<string, string>>({});
-
-  // 행별 위치 상태
   const [locationMap, setLocationMap] = useState<Record<string, LocationStatus>>(
     {
       "P-001": "창고",
@@ -78,14 +70,21 @@ export function OrderDetail({
     },
   );
 
-  // 🔹 상품별 지정이송 상태 (이송중 여부 + 목적지)
+  /* ================= 지정이송/잔량이송 상태 ================= */
   const [transferInfoMap, setTransferInfoMap] = useState<
     Record<string, TransferInfo | undefined>
   >({});
 
-  // 보충 마킹 상태
-  const [markedList, setMarkedList] = useState<ReplenishMark[]>([]);
+  const [residualInfoMap, setResidualInfoMap] = useState<
+    Record<string, ResidualTransferInfo | undefined>
+  >({});
 
+  const [residualStatusOpen, setResidualStatusOpen] = useState(false);
+  const [residualStatusTargetCode, setResidualStatusTargetCode] =
+    useState<string | null>(null);
+
+  /* ================= 재고 보충 마킹 ================= */
+  const [markedList, setMarkedList] = useState<ReplenishMark[]>([]);
   useEffect(() => {
     setMarkedList(getReplenishMarks());
   }, []);
@@ -94,25 +93,45 @@ export function OrderDetail({
     const next = toggleReplenishMark(code, name);
     setMarkedList(next);
   };
-
   const isProductMarked = (code: string) =>
     markedList.some((m) => m.code === code);
 
-  // 지정이송 모달
+  /* ================= 모달 상태 ================= */
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferTarget, setTransferTarget] = useState<{
     code: string;
     name: string;
-    route: string;
+    orderEaQty: number;
   } | null>(null);
 
-  const handleClickComplete = () => {
-    if (onComplete) {
-      onComplete(items);
-    }
-  };
+  const [residualOpen, setResidualOpen] = useState(false);
+  const [residualTarget, setResidualTarget] = useState<{
+    code: string;
+    name: string;
+    remainingEaQty: number;
+    existingDestinationSlots?: string[];
+  } | null>(null);
 
-  // ✅ hook 다 선언한 뒤에 order 여부 체크
+  /* ================= 무한루프 방지: 첫 아이템 프리뷰 =================
+   * - items 배열이 렌더마다 새로 생성되는 경우가 있어서
+   * - "orderId + 첫 item code"가 실제로 바뀔 때만 호출하도록 가드
+   */
+  const lastPreviewKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!onSelectItemForPreview) return;
+    if (!order) return;
+    if (items.length === 0) return;
+
+    const first = items[0];
+    const previewKey = `${order.id}::${(first as any).code ?? ""}`;
+
+    if (lastPreviewKeyRef.current === previewKey) return;
+    lastPreviewKeyRef.current = previewKey;
+
+    onSelectItemForPreview(first);
+  }, [order?.id, items, onSelectItemForPreview, order]);
+
   if (!order) {
     return (
       <div className="flex h-full items-center justify-center rounded-2xl border bg-white text-sm text-gray-500">
@@ -121,9 +140,17 @@ export function OrderDetail({
     );
   }
 
+  const handleClickComplete = () => {
+    onComplete?.(items);
+  };
+
+  const handleHoldOrder = () => {
+    onChangeStatus?.("보류" as OrderStatus);
+  };
+
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
-      {/* 헤더 정보 */}
+      {/* 헤더 */}
       <div className="mb-3 flex items-center justify-between">
         <div>
           <div className="text-xs text-gray-500">주문 상세 및 출고 지시</div>
@@ -139,7 +166,7 @@ export function OrderDetail({
           <div className="mt-0.5 text-[11px] text-gray-500">
             출고위치:{" "}
             <span className="font-medium text-gray-700">
-              {(order as any).shipLocation ?? "2층 피킹라인 (고정)"}
+              {(order as any).shipLocation ?? "2층 피킹라인"}
             </span>
           </div>
           <div className="mt-1 text-[11px] text-gray-500">
@@ -161,11 +188,22 @@ export function OrderDetail({
               {(order as any).statusLabel ?? (order as any).status}
             </span>
           </div>
+
           {hasLowStock && (
             <div className="mt-1 text-[11px] text-red-500">
               ⚠ 피킹창고 재고 부족 상품 있음
             </div>
           )}
+
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={handleHoldOrder}
+              className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700"
+            >
+              주문 보류
+            </button>
+          </div>
         </div>
       </div>
 
@@ -184,24 +222,33 @@ export function OrderDetail({
               <th className="border-b px-3 py-2 text-center">재고부족</th>
             </tr>
           </thead>
+
           <tbody>
             {items.map((it) => {
               const key = (it as any).code ?? (it as any).itemCode ?? "";
-              const routeValue = amrRouteMap[key] ?? "피킹";
-              const lowStock = (it as any).lowStock;
-              const pickingStock = (it as any).pickingStock ?? 0;
+              const name = (it as any).name ?? "";
               const qty = (it as any).qty ?? (it as any).orderQty ?? 0;
+              const pickingStock = (it as any).pickingStock ?? (it as any).stockQty ?? 0;
+              const lowStock = (it as any).lowStock;
 
+              const routeValue = amrRouteMap[key] ?? "피킹";
               const location: LocationStatus = locationMap[key] ?? "창고";
               const marked = isProductMarked(key);
 
               const transferInfo = transferInfoMap[key];
               const isTransferring = transferInfo?.status === "이송중";
 
+              // ✅ 잔량 계산(지정이송 잔량 - 잔량출고 누적)
+              const baseRemain = transferInfo?.remainingEaQty ?? 0;
+              const residualDone = transferInfo?.residualOutboundEaQty ?? 0;
+              const remainEa = Math.max(0, baseRemain - residualDone);
+
+              // ✅ 잔량 출고를 "시작"했는지 여부(0이어도 버튼 유지 목적)
+              const residualInfo = residualInfoMap[key];
+              const hasResidualStarted = !!residualInfo;
+
               const handleRowClick = () => {
-                if (onSelectItemForPreview) {
-                  onSelectItemForPreview(it);
-                }
+                onSelectItemForPreview?.(it);
               };
 
               return (
@@ -210,20 +257,16 @@ export function OrderDetail({
                   className="cursor-pointer bg-white hover:bg-blue-50"
                   onClick={handleRowClick}
                 >
-                  {/* 상품명 */}
-                  <td className="border-t px-3 py-2 text-[12px]">
-                    {(it as any).name}
-                  </td>
+                  <td className="border-t px-3 py-2 text-[12px]">{name}</td>
 
-                  {/* 주문수량 */}
-                  <td className="border-t px-3 py-2 text-right">{qty} EA</td>
-
-                  {/* 피킹창고 재고 */}
                   <td className="border-t px-3 py-2 text-right">
-                    {pickingStock} EA
+                    {Number(qty).toLocaleString()} EA
                   </td>
 
-                  {/* 상태 : 부족 / 여유 */}
+                  <td className="border-t px-3 py-2 text-right">
+                    {Number(pickingStock).toLocaleString()} EA
+                  </td>
+
                   <td className="border-t px-3 py-2 text-center">
                     {lowStock ? (
                       <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[11px] text-red-600">
@@ -253,49 +296,111 @@ export function OrderDetail({
                         }
                       >
                         <option value="피킹">피킹</option>
-                        <option value="2-1">2-1</option>
-                        <option value="3-1">3-1</option>
+                        <option value="파렛트">파렛트</option>
                       </select>
 
                       <button
                         type="button"
                         className="rounded-full bg-gray-900 px-2 py-0.5 text-[11px] text-white"
-                        onClick={() =>
+                        onClick={() => {
+                          const productName = name || "해당 상품";
+
+                          if (routeValue === "피킹") {
+                            alert(`제품 "${productName}" 토트박스가 피킹라인으로 호출되었습니다.`);
+                          } else {
+                            alert(`제품 "${productName}" 파렛트가 피킹라인으로 호출되었습니다.`);
+                          }
+
                           setLocationMap((prev) => ({
                             ...prev,
                             [key]: "입고중",
-                          }))
-                        }
+                          }));
+
+                          const cur = (order as any).status;
+                          if (onChangeStatus && (cur === "대기" || cur === "보류")) {
+                            onChangeStatus("출고중" as any);
+                          }
+                        }}
                       >
                         호출
                       </button>
                     </div>
                   </td>
 
-                  {/* 지정이송 */}
+                  {/* 지정이송 + 잔량출고/잔량이송중 */}
                   <td
                     className="border-t px-3 py-2 text-center"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <button
-                      type="button"
-                      className={`rounded-full px-2 py-0.5 text-[11px] border
-                        ${
+                    <div className="flex flex-col items-center gap-1">
+                      <button
+                        type="button"
+                        className={`rounded-full px-2 py-0.5 text-[11px] border ${
                           isTransferring
                             ? "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
                             : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
                         }`}
-                      onClick={() => {
-                        setTransferTarget({
-                          code: key,
-                          name: (it as any).name,
-                          route: routeValue,
-                        });
-                        setTransferOpen(true);
-                      }}
-                    >
-                      {isTransferring ? "이송중" : "지정이송"}
-                    </button>
+                        onClick={() => {
+                          setTransferTarget({
+                            code: key,
+                            name,
+                            orderEaQty: Number(qty),
+                          });
+                          setTransferOpen(true);
+                        }}
+                      >
+                        {isTransferring ? "이송중" : "지정이송"}
+                      </button>
+
+                      {/* ✅ 잔량 출고:
+                          - 원래: remainEa > 0 일 때만 버튼
+                          - 변경: "잔량출고를 한번이라도 시작했으면(=residualInfo 존재) remainEa가 0이어도 버튼 유지"
+                          - 버튼 클릭 시:
+                            - 시작 전이면 OutboundResidualPrepModal
+                            - 시작 후면 ResidualTransferModal(내역확인)
+                      */}
+                      {isTransferring && (remainEa > 0 || hasResidualStarted) && (
+                        <button
+                          type="button"
+                          className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                            hasResidualStarted
+                              ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                              : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                          }`}
+                          onClick={() => {
+                            if (hasResidualStarted) {
+                              setResidualStatusTargetCode(key);
+                              setResidualStatusOpen(true);
+                              return;
+                            }
+
+                            setResidualTarget({
+                              code: key,
+                              name,
+                              remainingEaQty: remainEa,
+                              existingDestinationSlots: transferInfo?.destinationSlots ?? [],
+                            });
+                            setResidualOpen(true);
+                          }}
+                        >
+                          {hasResidualStarted
+                            ? residualInfo?.status === "완료"
+                              ? "잔량 이송 완료"
+                              : "잔량 이송중"
+                            : "잔량 출고"}
+                        </button>
+                      )}
+
+                      {/* 잔량 표시(지정이송 이송중일 때 항상 표시) */}
+                      {isTransferring && (
+                        <div className="text-[11px] text-gray-500">
+                          잔량{" "}
+                          <span className="font-semibold text-gray-700">
+                            {remainEa.toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </td>
 
                   {/* 위치 */}
@@ -309,25 +414,20 @@ export function OrderDetail({
                     </span>
                   </td>
 
-                  {/* 재고부족 마킹 */}
+                  {/* 재고부족(마킹) */}
                   <td
                     className="border-t px-3 py-2 text-center"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
                       type="button"
-                      onClick={() =>
-                        handleToggleMark(key, (it as any).name ?? "")
-                      }
-                      className={`mx-auto inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] border transition
-                        ${
-                          marked
-                            ? "border-amber-400 bg-amber-50 text-amber-700"
-                            : "border-gray-300 bg-white text-gray-500 hover:bg-gray-50"
-                        }`}
-                      title={
-                        marked ? "마킹 해제" : "나중에 재고 보충이 필요하면 눌러두세요"
-                      }
+                      onClick={() => handleToggleMark(key, name)}
+                      className={`mx-auto inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] border transition ${
+                        marked
+                          ? "border-amber-400 bg-amber-50 text-amber-700"
+                          : "border-gray-300 bg-white text-gray-500 hover:bg-gray-50"
+                      }`}
+                      title={marked ? "마킹 해제" : "나중에 재고 보충이 필요하면 눌러두세요"}
                     >
                       <span className="text-[13px] leading-none">
                         {marked ? "★" : "☆"}
@@ -367,32 +467,96 @@ export function OrderDetail({
         </div>
       </div>
 
+      {/* ================= 모달 ================= */}
+
       {/* 지정이송 모달 */}
       <PalletDirectTransferModal
         open={transferOpen}
         onClose={() => setTransferOpen(false)}
         productCode={transferTarget?.code}
         productName={transferTarget?.name}
+        orderEaQty={transferTarget?.orderEaQty}
         existingTransfer={
-          transferTarget?.code
-            ? transferInfoMap[transferTarget.code] ?? null
-            : null
+          transferTarget?.code ? transferInfoMap[transferTarget.code] ?? null : null
         }
         onConfirmTransfer={(info) => {
           if (!transferTarget?.code) return;
 
-          // 🔹 이 상품의 지정이송 상태 저장 → 버튼이 "이송중"으로 바뀜
+          // ✅ orderEaQty / remainingEaQty 보정(혹시 누락 대비)
+          const merged: TransferInfo = {
+            ...info,
+            orderEaQty: transferTarget.orderEaQty,
+            remainingEaQty:
+              (transferTarget.orderEaQty ?? 0) - (info.transferEaQty ?? 0),
+          };
+
           setTransferInfoMap((prev) => ({
             ...prev,
-            [transferTarget.code]: info,
+            [transferTarget.code]: merged,
           }));
 
-          // 🔹 위치도 "출고중"으로 변경
           setLocationMap((prev) => ({
             ...prev,
             [transferTarget.code]: "출고중",
           }));
         }}
+      />
+
+      {/* 잔량 출고(준비→이송) 모달 */}
+      <OutboundResidualPrepModal
+        open={residualOpen}
+        onClose={() => setResidualOpen(false)}
+        productCode={residualTarget?.code ?? ""}
+        productName={residualTarget?.name}
+        remainingEaQty={residualTarget?.remainingEaQty ?? 0}
+        existingDestinationSlots={residualTarget?.existingDestinationSlots}
+        onTransfer={(payload: ResidualTransferPayload) => {
+          const code = payload.productCode;
+          if (!code) return;
+
+          // 1) ✅ 지정이송쪽 누적 잔량출고 EA 반영(잔량 계산용)
+          setTransferInfoMap((prev) => {
+            const cur = prev[code];
+            if (!cur) return prev;
+
+            const prevResidual = cur.residualOutboundEaQty ?? 0;
+            const nextResidual = prevResidual + (payload.totalEa ?? 0);
+
+            return {
+              ...prev,
+              [code]: {
+                ...cur,
+                residualOutboundEaQty: nextResidual,
+              },
+            };
+          });
+
+          // 2) ✅ 잔량 이송 현황 저장(= 0이 되어도 버튼 유지 & 내역 모달에서 사용)
+          setResidualInfoMap((prev) => ({
+            ...prev,
+            [code]: {
+              status: "이송중",
+              productCode: code,
+              productName: payload.productName,
+              transferredEaQty: payload.totalEa,
+              emptyPalletId: payload.emptyPalletId,
+              destinationSlot: payload.destSlot,
+              sources: payload.packedLines ?? [],
+              createdAt: new Date().toISOString(),
+            },
+          }));
+        }}
+      />
+
+      {/* 잔량 이송 현황 모달 */}
+      <ResidualTransferModal
+        open={residualStatusOpen}
+        onClose={() => setResidualStatusOpen(false)}
+        info={
+          residualStatusTargetCode
+            ? residualInfoMap[residualStatusTargetCode] ?? null
+            : null
+        }
       />
     </div>
   );

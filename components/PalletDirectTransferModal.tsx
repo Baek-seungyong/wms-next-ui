@@ -4,15 +4,18 @@
 import { useMemo, useState } from "react";
 
 type ZoneId = "A" | "B" | "C" | "D";
-
 type TransferStatus = "이송중" | "완료";
 
-// 🔹 이 타입을 밖에서도 쓰고 싶으니까 export
 export type TransferInfo = {
-  status: TransferStatus;
-  fromLocation?: string;
+  status: "이송중" | "완료";
   palletIds: string[];
   destinationSlots: string[];
+
+  orderEaQty: number;        // 주문수량
+  transferEaQty: number;     // 지정이송 수량
+  remainingEaQty: number;    // 지정이송 후 잔량
+
+  residualOutboundEaQty?: number; // ✅ 잔량출고 누적 EA (추가)
 };
 
 type Props = {
@@ -21,22 +24,21 @@ type Props = {
   productCode?: string;
   productName?: string;
 
+  // ✅ 주문상세 테이블의 주문수량(해당 row) 전달
+  orderEaQty?: number;
+
   existingTransfer?: TransferInfo | null;
   onConfirmTransfer?: (info: TransferInfo) => void;
 };
 
-/**
- * 🔹 데모용 파렛트 데이터
- *   - 실제로는 API에서 2층/3층 파렛트 목록 조회한 결과를 넣으면 됨
- */
 type PalletItem = {
   id: string;
   productCode: string;
   productName: string;
-  fromLocation: string; // 예: "3층창고", "2층창고"
-  lotNo: string; // 제품 LOT 번호
-  boxQty: number; // 박스 수량
-  eaQty: number; // 전체 수량(EA)
+  fromLocation: string;
+  lotNo: string;
+  boxQty: number;
+  eaQty: number;
 };
 
 const DEMO_PALLETS: PalletItem[] = [
@@ -96,11 +98,6 @@ const DEMO_PALLETS: PalletItem[] = [
   },
 ];
 
-/**
- * 🔹 데모용 파렛트 점유 정보
- *  - true = 이미 파렛트 있음(노란색, 선택 불가)
- *  - false = 빈 자리(흰색, 선택 가능)
- */
 const OCCUPIED_SET = new Set<string>([
   "A-1-1",
   "A-1-2",
@@ -121,6 +118,7 @@ export function PalletDirectTransferModal({
   onClose,
   productCode,
   productName,
+  orderEaQty,
   existingTransfer,
   onConfirmTransfer,
 }: Props) {
@@ -136,7 +134,7 @@ export function PalletDirectTransferModal({
     ZONES.forEach((zone) => {
       for (let r = 1; r <= ROWS; r += 1) {
         for (let c = 1; c <= COLS; c += 1) {
-          const id = `${zone}-${r}-${c}`; // 예: A-1-1
+          const id = `${zone}-${r}-${c}`;
           const occupied = OCCUPIED_SET.has(id);
           result[zone].push({ id, occupied });
         }
@@ -148,15 +146,7 @@ export function PalletDirectTransferModal({
 
   const isStatusMode = !!existingTransfer;
 
-  // 🔹 현황 모드에서, 이송중 파렛트의 상세 정보 (상품명/EA) 찾기
-  const statusPalletDetails = useMemo(() => {
-    if (!existingTransfer) return [];
-    return existingTransfer.palletIds
-      .map((id) => DEMO_PALLETS.find((p) => p.id === id) || null)
-      .filter((p): p is PalletItem => p !== null);
-  }, [existingTransfer]);
-
-  // ---------- 설정 모드용 상태 (새 지정이송 생성) ----------
+  // ---------- 설정 모드용 상태 ----------
   const [selectedPalletIds, setSelectedPalletIds] = useState<string[]>([]);
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
 
@@ -165,6 +155,20 @@ export function PalletDirectTransferModal({
     if (!productCode) return DEMO_PALLETS;
     return DEMO_PALLETS.filter((p) => p.productCode === productCode);
   }, [productCode]);
+
+  // ✅ 설정 모드: 실시간 지정이송 수량(EA)
+  const liveTransferEaQty = useMemo(() => {
+    return selectedPalletIds
+      .map((id) => DEMO_PALLETS.find((p) => p.id === id)?.eaQty ?? 0)
+      .reduce((a, b) => a + b, 0);
+  }, [selectedPalletIds]);
+
+  // ✅ 설정 모드: 실시간 잔량(EA) (음수 허용)
+  const liveRemainingEaQty = useMemo(() => {
+    return (orderEaQty ?? 0) - liveTransferEaQty;
+  }, [orderEaQty, liveTransferEaQty]);
+
+  const isOverTransfer = liveTransferEaQty > (orderEaQty ?? 0);
 
   const canConfirm =
     !isStatusMode &&
@@ -176,27 +180,32 @@ export function PalletDirectTransferModal({
     setSelectedSlots([]);
   };
 
+  // ---------- 현황 모드용 파렛트 상세 ----------
+  const statusPalletDetails = useMemo(() => {
+    if (!existingTransfer) return [];
+    return existingTransfer.palletIds
+      .map((id) => DEMO_PALLETS.find((p) => p.id === id) || null)
+      .filter((p): p is PalletItem => p !== null);
+  }, [existingTransfer]);
+
   const handleTogglePallet = (id: string, checked: boolean) => {
     setSelectedPalletIds((prev) => {
       const next = checked ? [...prev, id] : prev.filter((x) => x !== id);
 
-      // 파렛트 개수가 줄어들면 슬롯 개수도 맞춰주기 (뒤에서부터 제거)
+      // 파렛트 개수가 줄어들면 슬롯 개수도 맞춰주기
       if (selectedSlots.length > next.length) {
         setSelectedSlots((prevSlots) => prevSlots.slice(0, next.length));
       }
-
       return next;
     });
   };
 
   const handleToggleSlot = (id: string) => {
-    // 이미 선택된 슬롯이면 해제
     if (selectedSlots.includes(id)) {
       setSelectedSlots((prev) => prev.filter((x) => x !== id));
       return;
     }
 
-    // 선택할 수 있는 최대 개수 = 선택된 파렛트 개수
     if (selectedPalletIds.length === 0) {
       alert("먼저 이송할 파렛트를 선택해 주세요.");
       return;
@@ -221,11 +230,6 @@ export function PalletDirectTransferModal({
     const mainZone = uniqueZones[0];
     const nameForAlert = productName ?? productCode ?? "해당 상품";
 
-    // 👉 실제로는 여기서 API 호출 (AMR 이송 명령)
-    console.log("지정이송 실행");
-    console.log("선택 파렛트:", selectedPalletIds);
-    console.log("도착 위치:", selectedSlots);
-
     alert(
       `${nameForAlert}의 ${selectedPalletIds.length}개 파렛트를 ${mainZone}${
         uniqueZones.length > 1
@@ -234,11 +238,18 @@ export function PalletDirectTransferModal({
       } 이동합니다.`,
     );
 
+    const transferEaQty = liveTransferEaQty;
+    const remainingEaQty = (orderEaQty ?? 0) - transferEaQty; // ✅ 음수 허용
+
     const transferInfo: TransferInfo = {
       status: "이송중",
-      fromLocation: "2,3층 파렛트존", // 실제 운영에서는 호출한 쪽에서 넘겨주면 됨
+      fromLocation: "2,3층 파렛트존",
       palletIds: selectedPalletIds,
       destinationSlots: selectedSlots,
+
+      orderEaQty: orderEaQty ?? 0,
+      transferEaQty,
+      remainingEaQty,
     };
 
     onConfirmTransfer?.(transferInfo);
@@ -247,6 +258,14 @@ export function PalletDirectTransferModal({
   };
 
   if (!open) return null;
+
+  // ✅ 현황 모드에서 혹시 값이 비어있을 때도 보이도록 fallback 계산
+  const statusOrderQty = existingTransfer?.orderEaQty ?? orderEaQty ?? 0;
+  const statusTransferQty =
+    existingTransfer?.transferEaQty ??
+    statusPalletDetails.reduce((sum, p) => sum + (p.eaQty ?? 0), 0);
+  const statusRemainQty =
+    existingTransfer?.remainingEaQty ?? statusOrderQty - statusTransferQty;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -286,7 +305,7 @@ export function PalletDirectTransferModal({
 
         {/* 본문 */}
         <div className="flex flex-1 gap-4 overflow-hidden px-5 py-4 text-[11px]">
-          {/* 왼쪽: 설정 모드일 때 파렛트 목록 + 존 선택, 현황 모드일 때는 존만 표시 */}
+          {/* 왼쪽 */}
           <div className="flex flex-1 flex-col gap-3 overflow-hidden">
             {!isStatusMode && (
               <div className="flex flex-1 flex-col rounded-xl border bg-gray-50/80 p-3">
@@ -349,23 +368,17 @@ export function PalletDirectTransferModal({
                               }
                             />
                           </td>
-                          {/* 파렛트ID */}
                           <td className="px-2 py-1 align-middle">{p.id}</td>
-                          {/* 상품명 */}
                           <td className="px-2 py-1 align-middle">
                             {p.productName}
                           </td>
-                          {/* LOT 번호 */}
                           <td className="px-2 py-1 align-middle">{p.lotNo}</td>
-                          {/* 출발 위치 */}
                           <td className="px-2 py-1 align-middle">
                             {p.fromLocation}
                           </td>
-                          {/* BOX 수량 */}
                           <td className="px-2 py-1 text-right align-middle">
                             {p.boxQty.toLocaleString()}
                           </td>
-                          {/* 전체 수량 EA */}
                           <td className="px-2 py-1 text-right align-middle">
                             {p.eaQty.toLocaleString()}
                           </td>
@@ -384,7 +397,6 @@ export function PalletDirectTransferModal({
               </div>
             )}
 
-            {/* 🔽 파렛트 선택 → 도착 위치 선택 방향 화살표 (설정 모드에서만 표시) */}
             {!isStatusMode && (
               <div className="flex items-center justify-center text-gray-300">
                 <div className="flex items-center gap-2 text-[11px]">
@@ -395,7 +407,7 @@ export function PalletDirectTransferModal({
               </div>
             )}
 
-            {/* 존 / 위치 선택 or 표시 */}
+            {/* 존 / 위치 */}
             <div className="flex-1 overflow-y-auto rounded-xl border bg-gray-50/80 p-3">
               <p className="mb-2 text-xs font-semibold text-gray-800">
                 {isStatusMode ? "도착 위치 (이송중)" : "도착 위치 선택"}
@@ -412,7 +424,7 @@ export function PalletDirectTransferModal({
                         const base =
                           "flex h-9 w-9 items-center justify-center rounded-md";
 
-                        // 현황 모드: 기존 이송 목적지 하이라이트
+                        // 현황 모드: 목적지 하이라이트
                         if (isStatusMode && existingTransfer) {
                           const isDest =
                             existingTransfer.destinationSlots.includes(id);
@@ -425,7 +437,6 @@ export function PalletDirectTransferModal({
                               />
                             );
                           }
-
                           if (isDest) {
                             return (
                               <div
@@ -435,7 +446,6 @@ export function PalletDirectTransferModal({
                               />
                             );
                           }
-
                           return (
                             <div
                               key={id}
@@ -476,48 +486,53 @@ export function PalletDirectTransferModal({
             </div>
           </div>
 
-          {/* 오른쪽: 현황/안내 패널 */}
+          {/* 오른쪽 패널 */}
           <div className="w-60 flex-shrink-0 rounded-xl border bg-gray-50 p-3 text-[11px] text-gray-700">
-            {isStatusMode && existingTransfer ? (
+            {/* ✅ 설정 모드에서도 수량요약 표시 */}
+            {!isStatusMode ? (
               <>
                 <p className="mb-2 text-xs font-semibold text-gray-800">
-                  지정이송 현황
-                </p>
-                <p className="mb-1">
-                  · 현재 상태:{" "}
-                  <span className="font-semibold text-blue-700">
-                    {existingTransfer.status}
-                  </span>
-                </p>
-                <p className="mb-1">
-                  · 출발 위치:{" "}
-                  <span className="font-semibold">
-                    {existingTransfer.fromLocation ?? "2·3층 창고"}
-                  </span>
+                  지정이송 요약
                 </p>
 
-                <p className="mt-2 mb-1 font-semibold">이송중 파렛트</p>
-                <ul className="mb-2 max-h-28 list-none space-y-1 overflow-auto pl-0">
-                  {statusPalletDetails.map((p) => (
-                    <li key={p.id} className="rounded-md bg-white px-2 py-1">
-                      <div className="font-medium">{p.id}</div>
-                      <div className="ml-1 text-gray-600">
-                        {p.productName} / {p.eaQty.toLocaleString()} EA
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <div className="rounded-lg border bg-white p-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500">주문수량(EA)</span>
+                    <span className="font-semibold">
+                      {(orderEaQty ?? 0).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-gray-500">지정이송(EA)</span>
+                    <span className="font-semibold">
+                      {liveTransferEaQty.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-gray-500">잔량(EA)</span>
+                    <span
+                      className={`font-semibold ${
+                        liveRemainingEaQty < 0 ? "text-red-600" : "text-gray-800"
+                      }`}
+                    >
+                      {liveRemainingEaQty.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
 
-                <p className="mt-2 mb-1 font-semibold">도착 위치</p>
-                <ul className="max-h-20 list-disc space-y-0.5 overflow-auto pl-4">
-                  {existingTransfer.destinationSlots.map((slot) => (
-                    <li key={slot}>{slot}</li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <>
-                <p className="mb-2 text-xs font-semibold text-gray-800">
+                {/* ✅ 초과 경고 */}
+                {isOverTransfer && (
+                  <div className="mt-2 text-[11px] font-semibold text-red-600">
+                    지정이송수량이 주문수량보다 많습니다.
+                  </div>
+                )}
+
+                <p className="mt-3 text-[11px] text-gray-500">
+                  선택된 파렛트 {selectedPalletIds.length}개 / 선택된 위치{" "}
+                  {selectedSlots.length}개
+                </p>
+
+                <p className="mt-3 mb-2 text-xs font-semibold text-gray-800">
                   지정이송 안내
                 </p>
                 <ul className="list-disc space-y-1 pl-4 text-gray-600">
@@ -533,10 +548,75 @@ export function PalletDirectTransferModal({
                     동일해야 이송 버튼이 활성화됩니다.
                   </li>
                 </ul>
-                <p className="mt-3 text-[11px] text-gray-500">
-                  선택된 파렛트 {selectedPalletIds.length}개 / 선택된 위치{" "}
-                  {selectedSlots.length}개
+              </>
+            ) : (
+              <>
+                <p className="mb-2 text-xs font-semibold text-gray-800">
+                  지정이송 현황
                 </p>
+                <p className="mb-1">
+                  · 현재 상태:{" "}
+                  <span className="font-semibold text-blue-700">
+                    {existingTransfer?.status}
+                  </span>
+                </p>
+                <p className="mb-1">
+                  · 출발 위치:{" "}
+                  <span className="font-semibold">
+                    {existingTransfer?.fromLocation ?? "2·3층 창고"}
+                  </span>
+                </p>
+
+                {/* ✅ 수량 요약 박스 */}
+                <div className="mt-2 rounded-lg border bg-white p-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500">주문수량(EA)</span>
+                    <span className="font-semibold">
+                      {statusOrderQty.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-gray-500">지정이송(EA)</span>
+                    <span className="font-semibold">
+                      {statusTransferQty.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-gray-500">잔량(EA)</span>
+                    <span
+                      className={`font-semibold ${
+                        statusRemainQty < 0 ? "text-red-600" : "text-gray-800"
+                      }`}
+                    >
+                      {statusRemainQty.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {statusTransferQty > statusOrderQty && (
+                  <div className="mt-2 text-[11px] font-semibold text-red-600">
+                    지정이송수량이 주문수량보다 많습니다.
+                  </div>
+                )}
+
+                <p className="mt-3 mb-1 font-semibold">이송중 파렛트</p>
+                <ul className="mb-2 max-h-28 list-none space-y-1 overflow-auto pl-0">
+                  {statusPalletDetails.map((p) => (
+                    <li key={p.id} className="rounded-md bg-white px-2 py-1">
+                      <div className="font-medium">{p.id}</div>
+                      <div className="ml-1 text-gray-600">
+                        {p.productName} / {p.eaQty.toLocaleString()} EA
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+
+                <p className="mt-2 mb-1 font-semibold">도착 위치</p>
+                <ul className="max-h-20 list-disc space-y-0.5 overflow-auto pl-4">
+                  {existingTransfer?.destinationSlots.map((slot) => (
+                    <li key={slot}>{slot}</li>
+                  ))}
+                </ul>
               </>
             )}
           </div>
@@ -556,6 +636,7 @@ export function PalletDirectTransferModal({
             >
               {isStatusMode ? "닫기" : "취소"}
             </button>
+
             {!isStatusMode && (
               <button
                 type="button"

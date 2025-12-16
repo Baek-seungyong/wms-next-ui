@@ -93,7 +93,7 @@ const baseOrders: Order[] = [
 
 // 기본 품목 데이터
 const baseItems: OrderItem[] = [
-  { code: "P-001", name: "PET 500ml 투명", orderQty: 100, stockQty: 150 },
+  { code: "P-001", name: "PET 500ml 투명", orderQty: 3000, stockQty: 150 },
   { code: "P-013", name: "PET 1L 반투명", orderQty: 50, stockQty: 20, lowStock: true },
   { code: "C-201", name: "캡 28파이 화이트", orderQty: 100, stockQty: 500 },
   { code: "L-009", name: "라벨 500ml 화이트", orderQty: 100, stockQty: 80 },
@@ -251,7 +251,7 @@ export default function OrderManagement() {
         <div className="p-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="font-semibold text-base">
-              출고 WMS · 출고 작업 지시 (피킹라인 기준)
+              출고 WMS · 출고 작업 지시
             </span>
             <select
               className="border border-gray-300 rounded-md px-2 py-1 text-xs"
@@ -276,7 +276,7 @@ export default function OrderManagement() {
       {/* 본문 영역 : 주문서 목록 + 주문 상세 + 우측 이미지 프리뷰 */}
       <div className="grid grid-cols-12 gap-4">
         {/* 왼쪽: 주문서 목록 + 존 필터 탭 */}
-        <div className="col-span-4 flex flex-col gap-2">
+        <div className="col-span-3 flex flex-col gap-2">
           {/* 출고 구분 탭 */}
           <div className="flex items-center justify-between px-1">
             <span className="text-[11px] text-gray-500">출고 구분</span>
@@ -316,7 +316,7 @@ export default function OrderManagement() {
         </div>
 
         {/* 가운데: 주문 상세 */}
-        <div className="col-span-5">
+        <div className="col-span-6">
           <OrderDetail
             order={activeOrder}
             items={activeItems}
