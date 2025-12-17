@@ -339,7 +339,6 @@ export function OutboundResidualPrepModal({
                                   ...prev,
                                   [p.id]: true,
                                 }));
-                                alert(`파렛트 ${p.id} 호출 (예시)`);
                               }}
                             >
                               호출
@@ -433,7 +432,6 @@ export function OutboundResidualPrepModal({
                                   ...prev,
                                   [t.id]: true,
                                 }));
-                                alert(`토트 ${t.id} 호출 (예시)`);
                               }}
                             >
                               호출
