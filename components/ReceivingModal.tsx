@@ -7,6 +7,7 @@ import {
   type WarehouseFloor,
   type ZoneDef,
 } from "./WarehouseZonePickerModal";
+import Image from "next/image";
 
 type ReceivingModalProps = {
   open: boolean;
@@ -681,13 +682,21 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                 setTimeout(() => palletInRef.current?.focus(), 0);
               }}
               className={`px-4 py-1 rounded-full ${
-                isInTab
-                  ? "bg-white shadow text-emerald-700 font-semibold"
-                  : "text-gray-500 hover:text-gray-800"
+                isInTab ? "bg-white shadow text-emerald-700 font-semibold" : "text-gray-500 hover:text-gray-800"
               }`}
             >
-              입고
+              <span className="inline-flex items-center gap-2">
+                <Image
+                  src="/images/warehouse/in.jpg"
+                  alt="입고"
+                  width={20}
+                  height={20}
+                  className="rounded pointer-events-none select-none"
+                />
+                입고
+              </span>
             </button>
+
             <button
               type="button"
               onClick={() => {
@@ -697,12 +706,19 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
                 setTimeout(() => palletOutRef.current?.focus(), 0);
               }}
               className={`px-4 py-1 rounded-full ${
-                !isInTab
-                  ? "bg-white shadow text-orange-700 font-semibold"
-                  : "text-gray-500 hover:text-gray-800"
+                !isInTab ? "bg-white shadow text-orange-700 font-semibold" : "text-gray-500 hover:text-gray-800"
               }`}
             >
-              출고
+              <span className="inline-flex items-center gap-2">
+                <Image
+                  src="/images/warehouse/out.jpg"
+                  alt="출고"
+                  width={20}
+                  height={20}
+                  className="rounded pointer-events-none select-none"
+                />
+                출고
+              </span>
             </button>
           </div>
         </div>
@@ -941,7 +957,17 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
 
             {/* 오른쪽: 입고 미리보기 + 기존 파렛트 재고 + 입고 확정 버튼 */}
             <div className="w-[42%] flex flex-col border-l pl-4 min-w-0">
-              <h3 className="text-xs font-semibold text-gray-700 mb-2">이번 입고 지시 미리보기</h3>
+              <h3 className="text-xs font-semibold text-gray-700 mb-2">입고 내역</h3>
+              <div className="w-full h-[110px] mb-2 rounded-md bg-white flex items-center justify-center pointer-events-none select-none">
+                <Image
+                  src="/images/warehouse/in.jpg" // 입고면 in, 출고면 out
+                  alt="입고 안내"
+                  width={800}
+                  height={200}
+                  className="max-h-[110px] w-auto object-contain"
+                  priority
+                />
+              </div>
               <div className="flex-1 border rounded-lg bg-gray-50 px-3 py-2 overflow-auto text-[11px] text-gray-700 space-y-1">
                 <p>
                   파렛트: <span className="font-semibold">{displayPalletIn}</span>
@@ -1202,8 +1228,18 @@ export function ReceivingModal({ open, onClose }: ReceivingModalProps) {
             {/* 오른쪽: 출고 미리보기 + 출고 확정 버튼 */}
             <div className="w-[42%] flex flex-col border-l pl-4 min-w-0">
               <h3 className="text-xs font-semibold text-gray-700 mb-2">
-                이번 출고 / 이송 지시 미리보기
+                출고 내역
               </h3>
+              <div className="w-full h-[110px] mb-2 rounded-md bg-white flex items-center justify-center pointer-events-none select-none">
+                <Image
+                  src="/images/warehouse/out.jpg" // 입고면 in, 출고면 out
+                  alt="입고 안내"
+                  width={800}
+                  height={200}
+                  className="max-h-[110px] w-auto object-contain"
+                  priority
+                />
+              </div>
               <div className="flex-1 border rounded-lg bg-gray-50 px-3 py-2 overflow-auto text-[11px] text-gray-700 space-y-1">
                 <p>
                   출고 파렛트: <span className="font-semibold">{displayPalletOut}</span>
