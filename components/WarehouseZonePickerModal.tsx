@@ -6,10 +6,10 @@ import { useMemo, useState } from "react";
 export type WarehouseFloor = "2F" | "3F";
 
 export type ZoneDef = {
-  id: string; // 예: "2F-1", "3F-10", "2F-P"
-  label: string; // 예: "1", "10", "P"
-  // ✅ 정규화 좌표(0~1000 기준) - 꼭지점(폴리곤)
-  points: Array<{ x: number; y: number }>;
+  id: string;
+  label: string;
+  points: { x: number; y: number }[];
+  disabled?: boolean; // ✅ 추가
 };
 
 type Props = {
@@ -24,35 +24,221 @@ type Props = {
  * - 좌표 기준: viewBox 0 0 1000 1000
  * - points는 시계/반시계 방향 아무거나 OK (순서만 이어지게)
  */
-const ZONES_2F: ZoneDef[] = [
-  { id: "2F-1", label: "1", points: [{ x: 40, y: 60 }, { x: 300, y: 60 }, { x: 300, y: 250 }, { x: 40, y: 250 }] },
-  { id: "2F-2", label: "2", points: [{ x: 300, y: 60 }, { x: 760, y: 60 }, { x: 760, y: 180 }, { x: 300, y: 180 }] },
-  { id: "2F-3", label: "3", points: [{ x: 300, y: 180 }, { x: 760, y: 180 }, { x: 760, y: 280 }, { x: 300, y: 280 }] },
-  { id: "2F-4", label: "4", points: [{ x: 760, y: 60 }, { x: 980, y: 60 }, { x: 980, y: 280 }, { x: 760, y: 280 }] },
-  { id: "2F-5", label: "5", points: [{ x: 40, y: 280 }, { x: 260, y: 280 }, { x: 260, y: 560 }, { x: 40, y: 560 }] },
-  { id: "2F-6", label: "6", points: [{ x: 260, y: 280 }, { x: 460, y: 280 }, { x: 460, y: 560 }, { x: 260, y: 560 }] },
-  { id: "2F-7", label: "7", points: [{ x: 540, y: 280 }, { x: 760, y: 280 }, { x: 760, y: 560 }, { x: 540, y: 560 }] },
-  { id: "2F-8", label: "8", points: [{ x: 760, y: 280 }, { x: 980, y: 280 }, { x: 980, y: 560 }, { x: 760, y: 560 }] },
-  { id: "2F-9", label: "9", points: [{ x: 40, y: 560 }, { x: 260, y: 560 }, { x: 260, y: 940 }, { x: 40, y: 940 }] },
-  { id: "2F-10", label: "10", points: [{ x: 260, y: 560 }, { x: 760, y: 560 }, { x: 760, y: 760 }, { x: 260, y: 760 }] },
-  { id: "2F-11", label: "11", points: [{ x: 260, y: 760 }, { x: 760, y: 760 }, { x: 760, y: 940 }, { x: 260, y: 940 }] },
+export const ZONES_2F: ZoneDef[] = [
+  {
+    id: "2F-1",
+    label: "2층 1구역",
+    points: [
+      { x: 14, y: 12 },
+      { x: 883, y: 12 },
+      { x: 883, y: 550 },
+      { x: 14, y: 550 },
+    ],
+  },
+  {
+    id: "2F-2",
+    label: "2층 2구역",
+    points: [
+      { x: 883, y: 13 },
+      { x: 2629, y: 13 },
+      { x: 2629, y: 276 },
+      { x: 883, y: 276 },
+    ],
+  },
+  {
+    id: "2F-3",
+    label: "2층 3구역",
+    points: [
+      { x: 883, y: 277 },
+      { x: 2630, y: 277 },
+      { x: 2630, y: 563 },
+      { x: 883, y: 563 },
+    ],
+  },
+  {
+    id: "2F-4",
+    label: "2층 4구역",
+    points: [
+      { x: 2629, y: 11 },
+      { x: 3502, y: 11 },
+      { x: 3502, y: 564 },
+      { x: 2629, y: 564 },
+    ],
+  },
+  {
+    id: "2F-5",
+    label: "2층 5구역",
+    points: [
+      { x: 884, y: 562 },
+      { x: 1502, y: 562 },
+      { x: 1502, y: 1094 },
+      { x: 884, y: 1094 },
+    ],
+  },
+  {
+    id: "2F-6",
+    label: "2층 6구역",
+    points: [
+      { x: 15, y: 1110 },
+      { x: 882, y: 1110 },
+      { x: 882, y: 1648 },
+      { x: 15, y: 1648 },
+    ],
+  },
+  {
+    id: "2F-7",
+    label: "2층 7구역",
+    points: [
+      { x: 883, y: 1094 },
+      { x: 1971, y: 1094 },
+      { x: 1971, y: 1368 },
+      { x: 883, y: 1368 },
+    ],
+  },
+  {
+    id: "2F-8",
+    label: "2층 8구역",
+    points: [
+      { x: 883, y: 1368 },
+      { x: 1971, y: 1368 },
+      { x: 1971, y: 1648 },
+      { x: 883, y: 1648 },
+    ],
+  },
 
-  // ✅ 피킹 구역(2층 도면의 파란 랙 영역)도 “구역”으로 넣고 싶으면 이런 식으로
-  { id: "2F-P", label: "P", points: [{ x: 780, y: 300 }, { x: 980, y: 300 }, { x: 980, y: 520 }, { x: 780, y: 520 }] },
+  // ✅ 2층 P구역: 일단 데이터는 두되, 선택 불가 처리
+  {
+    id: "2F-P",
+    label: "2층 P구역",
+    disabled: true,
+    points: [
+      { x: 2632, y: 564 },
+      { x: 3054, y: 564 },
+      { x: 3054, y: 1093 },
+      { x: 2632, y: 1093 },
+    ],
+  },
 ];
 
-const ZONES_3F: ZoneDef[] = [
-  { id: "3F-1", label: "1", points: [{ x: 40, y: 60 }, { x: 300, y: 60 }, { x: 300, y: 250 }, { x: 40, y: 250 }] },
-  { id: "3F-2", label: "2", points: [{ x: 300, y: 60 }, { x: 760, y: 60 }, { x: 760, y: 180 }, { x: 300, y: 180 }] },
-  { id: "3F-3", label: "3", points: [{ x: 300, y: 180 }, { x: 760, y: 180 }, { x: 760, y: 280 }, { x: 300, y: 280 }] },
-  { id: "3F-4", label: "4", points: [{ x: 760, y: 60 }, { x: 980, y: 60 }, { x: 980, y: 280 }, { x: 760, y: 280 }] },
-  { id: "3F-5", label: "5", points: [{ x: 40, y: 280 }, { x: 260, y: 280 }, { x: 260, y: 560 }, { x: 40, y: 560 }] },
-  { id: "3F-6", label: "6", points: [{ x: 260, y: 280 }, { x: 460, y: 280 }, { x: 460, y: 560 }, { x: 260, y: 560 }] },
-  { id: "3F-7", label: "7", points: [{ x: 540, y: 280 }, { x: 760, y: 280 }, { x: 760, y: 560 }, { x: 540, y: 560 }] },
-  { id: "3F-8", label: "8", points: [{ x: 760, y: 280 }, { x: 980, y: 280 }, { x: 980, y: 560 }, { x: 760, y: 560 }] },
-  { id: "3F-9", label: "9", points: [{ x: 40, y: 560 }, { x: 260, y: 560 }, { x: 260, y: 940 }, { x: 40, y: 940 }] },
-  { id: "3F-10", label: "10", points: [{ x: 260, y: 560 }, { x: 760, y: 560 }, { x: 760, y: 760 }, { x: 260, y: 760 }] },
-  { id: "3F-11", label: "11", points: [{ x: 260, y: 760 }, { x: 760, y: 760 }, { x: 760, y: 940 }, { x: 260, y: 940 }] },
+export const ZONES_3F: ZoneDef[] = [
+  {
+    id: "3F-1",
+    label: "3층 1구역",
+    points: [
+      { x: 6, y: 11 },
+      { x: 868, y: 11 },
+      { x: 868, y: 275 },
+      { x: 762, y: 275 },
+      { x: 762, y: 560 },
+      { x: 6, y: 560 },
+    ],
+  },
+  {
+    id: "3F-2",
+    label: "3층 2구역",
+    points: [
+      { x: 868, y: 12 },
+      { x: 2604, y: 12 },
+      { x: 2604, y: 276 },
+      { x: 868, y: 276 },
+    ],
+  },
+  {
+    id: "3F-3",
+    label: "3층 3구역",
+    points: [
+      { x: 761, y: 276 },
+      { x: 2603, y: 276 },
+      { x: 2603, y: 561 },
+      { x: 761, y: 561 },
+    ],
+  },
+  {
+    id: "3F-4",
+    label: "3층 4구역",
+    points: [
+      { x: 2603, y: 12 },
+      { x: 3476, y: 12 },
+      { x: 3476, y: 561 },
+      { x: 2603, y: 561 },
+    ],
+  },
+  {
+    id: "3F-5",
+    label: "3층 5구역",
+    points: [
+      { x: 6, y: 561 },
+      { x: 826, y: 561 },
+      { x: 826, y: 1089 },
+      { x: 6, y: 1089 },
+    ],
+  },
+  {
+    id: "3F-6",
+    label: "3층 6구역",
+    points: [
+      { x: 869, y: 561 },
+      { x: 1500, y: 561 },
+      { x: 1500, y: 1089 },
+      { x: 869, y: 1089 },
+    ],
+  },
+  {
+    id: "3F-7",
+    label: "3층 7구역",
+    points: [
+      { x: 1948, y: 561 },
+      { x: 2602, y: 561 },
+      { x: 2602, y: 1089 },
+      { x: 1948, y: 1089 },
+    ],
+  },
+  {
+    id: "3F-8",
+    label: "3층 8구역",
+    points: [
+      { x: 2602, y: 561 },
+      { x: 3477, y: 561 },
+      { x: 3477, y: 1089 },
+      { x: 2602, y: 1089 },
+    ],
+  },
+  {
+    id: "3F-9",
+    label: "3층 9구역",
+    points: [
+      { x: 7, y: 1089 },
+      { x: 779, y: 1089 },
+      { x: 779, y: 1359 },
+      { x: 869, y: 1359 },
+      { x: 869, y: 1640 },
+      { x: 7, y: 1640 },
+    ],
+  },
+  {
+    id: "3F-10",
+    label: "3층 10구역",
+    points: [
+      { x: 778, y: 1089 },
+      { x: 1500, y: 1089 },
+      { x: 1500, y: 562 },
+      { x: 1949, y: 562 },
+      { x: 1949, y: 1089 },
+      { x: 2603, y: 1089 },
+      { x: 2603, y: 1358 },
+      { x: 778, y: 1358 },
+    ],
+  },
+  {
+    id: "3F-11",
+    label: "3층 11구역",
+    points: [
+      { x: 869, y: 1359 },
+      { x: 2603, y: 1359 },
+      { x: 2603, y: 1640 },
+      { x: 869, y: 1640 },
+    ],
+  },
 ];
 
 function pointsToSvg(points: ZoneDef["points"]) {
@@ -96,24 +282,40 @@ export function WarehouseZonePickerModal({ open, floor, onClose, onSelect }: Pro
               <img src={imageSrc} alt={`${floor} 도면`} className="block h-auto w-full select-none" />
 
               {/* SVG overlay (viewBox 1000 기준) */}
-              <svg
+                <svg
                 className="absolute inset-0 h-full w-full"
-                viewBox="0 0 1000 1000"
-                preserveAspectRatio="none"
-              >
+                viewBox="0 0 3502 1648"   // ✅ 원본 이미지 크기
+                preserveAspectRatio="xMinYMin meet"
+                >
                 {zones.map((z) => {
-                  const isHover = hoverId === z.id;
+                    const isHover = hoverId === z.id;
+                    const isDisabled = !!z.disabled;
+
+                    const fill = isDisabled
+                    ? "rgba(148,163,184,0.12)" // 회색톤
+                    : isHover
+                        ? "rgba(59,130,246,0.22)"
+                        : "rgba(59,130,246,0.10)";
+
+                    const stroke = isDisabled
+                    ? "rgba(148,163,184,0.35)"
+                    : isHover
+                        ? "rgba(37,99,235,0.9)"
+                        : "rgba(37,99,235,0.5)";
                   return (
                     <g key={z.id}>
                       <polygon
                         points={pointsToSvg(z.points)}
-                        fill={isHover ? "rgba(59,130,246,0.22)" : "rgba(59,130,246,0.10)"}
-                        stroke={isHover ? "rgba(37,99,235,0.9)" : "rgba(37,99,235,0.5)"}
+                        fill={fill}
+                        stroke={stroke}
                         strokeWidth={2}
-                        className="cursor-pointer"
+                        className={z.disabled ? "cursor-not-allowed" : "cursor-pointer"}
                         onMouseEnter={() => setHoverId(z.id)}
                         onMouseLeave={() => setHoverId(null)}
-                        onClick={() => onSelect(z)}
+                        onClick={() => {
+                            if (z.disabled) return; // 2층 p구역 무시
+                            onSelect(z);
+                        }}
                       />
                       {/* 라벨(대충 중앙에) */}
                       <text
