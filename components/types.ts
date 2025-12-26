@@ -29,6 +29,7 @@ export type TransferStatus = "이송중" | "완료";
 
 /** ✅ 지정이송 정보 */
 export type TransferInfo = {
+  productCode?: string;
   status: "이송중" | "완료";
   fromLocation?: string;
   palletIds: string[];
@@ -81,6 +82,8 @@ export type ResidualTransferPayload = {
   destSlot: string;
   packedLines: PackedLine[];
 };
+
+
 
 // 상태 뱃지 CSS
 export const statusBadgeClass = (status: OrderStatus): string => {

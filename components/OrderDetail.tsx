@@ -46,6 +46,22 @@ const locationBadgeClass = (loc: LocationStatus) => {
   }
 };
 
+/** ✅ 잔량 프로세스 단계 */
+type ResidualStep = "NONE" | "PREP_CALLING" | "PACKING" | "DONE";
+
+/** ✅ 잔량 프로세스 임시 저장(draft) - 2단계/3단계 이어가기용 */
+type ResidualDraft = {
+  calledPallets: Record<string, boolean>;
+  calledTotes: Record<string, boolean>;
+  emptyPalletId: string;
+
+  palletPickMap: Record<string, number>;
+  totePickMap: Record<string, number>;
+  packedLines: any[]; // PackedLine 타입이 types에 있으면 그걸로 바꿔도 됨
+
+  destSlot: string | null;
+};
+
 export function OrderDetail({
   order,
   items,
@@ -77,6 +93,14 @@ export function OrderDetail({
 
   const [residualInfoMap, setResidualInfoMap] = useState<
     Record<string, ResidualTransferInfo | undefined>
+  >({});
+
+  /** ✅ 잔량 단계/임시저장(닫고 나가도 이어가기) */
+  const [residualStepMap, setResidualStepMap] = useState<
+    Record<string, ResidualStep | undefined>
+  >({});
+  const [residualDraftMap, setResidualDraftMap] = useState<
+    Record<string, ResidualDraft | undefined>
   >({});
 
   const [residualStatusOpen, setResidualStatusOpen] = useState(false);
@@ -112,10 +136,7 @@ export function OrderDetail({
     existingDestinationSlots?: string[];
   } | null>(null);
 
-  /* ================= 무한루프 방지: 첫 아이템 프리뷰 =================
-   * - items 배열이 렌더마다 새로 생성되는 경우가 있어서
-   * - "orderId + 첫 item code"가 실제로 바뀔 때만 호출하도록 가드
-   */
+  /* ================= 무한루프 방지: 첫 아이템 프리뷰 ================= */
   const lastPreviewKeyRef = useRef<string>("");
 
   useEffect(() => {
@@ -146,6 +167,21 @@ export function OrderDetail({
 
   const handleHoldOrder = () => {
     onChangeStatus?.("보류" as OrderStatus);
+  };
+
+  /** ✅ 잔량 프로세스 모달 열기(현재 저장된 step/draft 기반) */
+  const openResidualFlow = (code: string, name: string, remainEa: number) => {
+    const transferInfo = transferInfoMap[code];
+    const existingSlots = transferInfo?.destinationSlots ?? [];
+
+    setResidualTarget({
+      code,
+      name,
+      remainingEaQty: remainEa,
+      existingDestinationSlots: existingSlots,
+    });
+
+    setResidualOpen(true);
   };
 
   return (
@@ -228,7 +264,8 @@ export function OrderDetail({
               const key = (it as any).code ?? (it as any).itemCode ?? "";
               const name = (it as any).name ?? "";
               const qty = (it as any).qty ?? (it as any).orderQty ?? 0;
-              const pickingStock = (it as any).pickingStock ?? (it as any).stockQty ?? 0;
+              const pickingStock =
+                (it as any).pickingStock ?? (it as any).stockQty ?? 0;
               const lowStock = (it as any).lowStock;
 
               const routeValue = amrRouteMap[key] ?? "피킹";
@@ -243,12 +280,71 @@ export function OrderDetail({
               const residualDone = transferInfo?.residualOutboundEaQty ?? 0;
               const remainEa = Math.max(0, baseRemain - residualDone);
 
-              // ✅ 잔량 출고를 "시작"했는지 여부(0이어도 버튼 유지 목적)
-              const residualInfo = residualInfoMap[key];
-              const hasResidualStarted = !!residualInfo;
+              // ✅ 잔량 프로세스 단계
+              const residualStep: ResidualStep = residualStepMap[key] ?? "NONE";
+
+              // ✅ 잔량 프로세스가 한번이라도 시작됐으면(닫고 나가도) 버튼 유지
+              const hasResidualFlow =
+                residualStep !== "NONE" || remainEa > 0 || !!residualInfoMap[key];
 
               const handleRowClick = () => {
                 onSelectItemForPreview?.(it);
+              };
+
+              /** ✅ 지정이송 버튼 라벨/동작(단일 흐름) */
+              const getTransferButtonLabel = () => {
+                if (!isTransferring) return "지정이송";
+
+                // 지정이송 완료 + 잔량 흐름 존재
+                if (hasResidualFlow) {
+                  if (residualStep === "PREP_CALLING") return "잔량 준비";
+                  if (residualStep === "PACKING") return "잔량 적재";
+                  if (residualStep === "DONE") return "결과/내역";
+                  // 아직 단계 안 잡혔는데 잔량 남음
+                  return "잔량 준비";
+                }
+
+                // 잔량 없음 -> 이송 현황
+                return "이송중";
+              };
+
+              const handleTransferButtonClick = () => {
+                // 1) 지정이송 전 => 지정이송 모달
+                if (!isTransferring) {
+                  setTransferTarget({
+                    code: key,
+                    name,
+                    orderEaQty: Number(qty),
+                  });
+                  setTransferOpen(true);
+                  return;
+                }
+
+                // 2) 지정이송 후
+                if (hasResidualFlow) {
+                  // DONE이면 결과/내역(기존 ResidualTransferModal 사용)
+                  if (residualStep === "DONE") {
+                    setResidualStatusTargetCode(key);
+                    setResidualStatusOpen(true);
+                    return;
+                  }
+
+                  // PREP_CALLING or PACKING or NONE(잔량 남음)
+                  openResidualFlow(key, name, remainEa);
+                  // 단계 초기화(잔량 남아있는데 NONE이면 2단계로 시작)
+                  if (residualStep === "NONE") {
+                    setResidualStepMap((prev) => ({ ...prev, [key]: "PREP_CALLING" }));
+                  }
+                  return;
+                }
+
+                // 잔량 없음이면 지정이송 현황 모달
+                setTransferTarget({
+                  code: key,
+                  name,
+                  orderEaQty: Number(qty),
+                });
+                setTransferOpen(true);
               };
 
               return (
@@ -327,7 +423,7 @@ export function OrderDetail({
                     </div>
                   </td>
 
-                  {/* 지정이송 + 잔량출고/잔량이송중 */}
+                  {/* ✅ 지정이송/잔량 단일 흐름 버튼 */}
                   <td
                     className="border-t px-3 py-2 text-center"
                     onClick={(e) => e.stopPropagation()}
@@ -336,68 +432,37 @@ export function OrderDetail({
                       <button
                         type="button"
                         className={`rounded-full px-2 py-0.5 text-[11px] border ${
-                          isTransferring
-                            ? "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                            : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                          !isTransferring
+                            ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                            : hasResidualFlow
+                              ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                              : "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
                         }`}
-                        onClick={() => {
-                          setTransferTarget({
-                            code: key,
-                            name,
-                            orderEaQty: Number(qty),
-                          });
-                          setTransferOpen(true);
-                        }}
+                        onClick={handleTransferButtonClick}
                       >
-                        {isTransferring ? "이송중" : "지정이송"}
+                        {getTransferButtonLabel()}
                       </button>
 
-                      {/* ✅ 잔량 출고:
-                          - 원래: remainEa > 0 일 때만 버튼
-                          - 변경: "잔량출고를 한번이라도 시작했으면(=residualInfo 존재) remainEa가 0이어도 버튼 유지"
-                          - 버튼 클릭 시:
-                            - 시작 전이면 OutboundResidualPrepModal
-                            - 시작 후면 ResidualTransferModal(내역확인)
-                      */}
-                      {isTransferring && (remainEa > 0 || hasResidualStarted) && (
-                        <button
-                          type="button"
-                          className={`rounded-full border px-2 py-0.5 text-[11px] ${
-                            hasResidualStarted
-                              ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                              : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                          }`}
-                          onClick={() => {
-                            if (hasResidualStarted) {
-                              setResidualStatusTargetCode(key);
-                              setResidualStatusOpen(true);
-                              return;
-                            }
-
-                            setResidualTarget({
-                              code: key,
-                              name,
-                              remainingEaQty: remainEa,
-                              existingDestinationSlots: transferInfo?.destinationSlots ?? [],
-                            });
-                            setResidualOpen(true);
-                          }}
-                        >
-                          {hasResidualStarted
-                            ? residualInfo?.status === "완료"
-                              ? "잔량 이송 완료"
-                              : "잔량 이송중"
-                            : "잔량 출고"}
-                        </button>
-                      )}
-
-                      {/* 잔량 표시(지정이송 이송중일 때 항상 표시) */}
+                      {/* ✅ 잔량 표시(지정이송 이송중일 때 항상 표시) */}
                       {isTransferring && (
                         <div className="text-[11px] text-gray-500">
                           잔량{" "}
                           <span className="font-semibold text-gray-700">
                             {remainEa.toLocaleString()}
                           </span>
+                        </div>
+                      )}
+
+                      {/* ✅ 잔량 단계 표시(디버그/가이드용 - 원하면 빼도 됨) */}
+                      {isTransferring && hasResidualFlow && (
+                        <div className="text-[10px] text-gray-400">
+                          {residualStep === "PREP_CALLING"
+                            ? "2단계: 호출"
+                            : residualStep === "PACKING"
+                              ? "3단계: 적재"
+                              : residualStep === "DONE"
+                                ? "4단계: 결과"
+                                : "대기"}
                         </div>
                       )}
                     </div>
@@ -499,10 +564,40 @@ export function OrderDetail({
             ...prev,
             [transferTarget.code]: "출고중",
           }));
+
+          // ✅ 지정이송 후 잔량이 남으면 바로 2단계로 진입(원하면 제거 가능)
+          const remainEa = Math.max(
+            0,
+            (transferTarget.orderEaQty ?? 0) - (info.transferEaQty ?? 0),
+          );
+
+          if (remainEa > 0) {
+            setResidualStepMap((prev) => ({ ...prev, [transferTarget.code]: "PREP_CALLING" }));
+            setResidualDraftMap((prev) => ({
+              ...prev,
+              [transferTarget.code]: prev[transferTarget.code] ?? {
+                calledPallets: {},
+                calledTotes: {},
+                emptyPalletId: "",
+                palletPickMap: {},
+                totePickMap: {},
+                packedLines: [],
+                destSlot: null,
+              },
+            }));
+
+            setResidualTarget({
+              code: transferTarget.code,
+              name: transferTarget.name,
+              remainingEaQty: remainEa,
+              existingDestinationSlots: info.destinationSlots ?? [],
+            });
+            setResidualOpen(true);
+          }
         }}
       />
 
-      {/* 잔량 출고(준비→이송) 모달 */}
+      {/* ✅ 잔량 2단계/3단계 모달 */}
       <OutboundResidualPrepModal
         open={residualOpen}
         onClose={() => setResidualOpen(false)}
@@ -510,6 +605,37 @@ export function OrderDetail({
         productName={residualTarget?.name}
         remainingEaQty={residualTarget?.remainingEaQty ?? 0}
         existingDestinationSlots={residualTarget?.existingDestinationSlots}
+        /** ✅ 이어가기: 저장된 단계/드래프트 전달 */
+        initialStep={
+          residualTarget?.code
+            ? residualStepMap[residualTarget.code] === "PACKING"
+              ? 3
+              : 2
+            : 2
+        }
+        initialDraft={
+          residualTarget?.code ? residualDraftMap[residualTarget.code] : undefined
+        }
+        /** ✅ 닫기/이동 시점마다 진행상태 저장 */
+        onSaveProgress={(step, draft) => {
+          const code = residualTarget?.code;
+          if (!code) return;
+
+          const nextStep =
+            step === 2 ? "PREP_CALLING" : step === 3 ? "PACKING" : "DONE";
+
+          setResidualStepMap((prev) => {
+            if (prev[code] === nextStep) return prev; // ✅ 변화 없으면 업데이트 금지
+            return { ...prev, [code]: nextStep };
+          });
+
+          setResidualDraftMap((prev) => {
+            // ✅ draft가 같은 레퍼런스로 계속 들어오면 루프 유발 가능 -> 동일이면 막기
+            if (prev[code] === draft) return prev;
+            return { ...prev, [code]: draft };
+          });
+        }}
+        /** ✅ 3단계에서 이송 확정 */
         onTransfer={(payload: ResidualTransferPayload) => {
           const code = payload.productCode;
           if (!code) return;
@@ -531,7 +657,7 @@ export function OrderDetail({
             };
           });
 
-          // 2) ✅ 잔량 이송 현황 저장(= 0이 되어도 버튼 유지 & 내역 모달에서 사용)
+          // 2) ✅ 잔량 이송 현황 저장
           setResidualInfoMap((prev) => ({
             ...prev,
             [code]: {
@@ -545,10 +671,16 @@ export function OrderDetail({
               createdAt: new Date().toISOString(),
             },
           }));
+
+          // 3) ✅ 단계 DONE 처리(이후 버튼은 결과/내역으로)
+          setResidualStepMap((prev) => ({ ...prev, [code]: "DONE" }));
+
+          // draft는 남겨둬도 되고(감사용), 여기서 비워도 됨
+          setResidualDraftMap((prev) => ({ ...prev, [code]: prev[code] }));
         }}
       />
 
-      {/* 잔량 이송 현황 모달 */}
+      {/* ✅ 잔량 결과/내역 모달(기존 그대로 사용) */}
       <ResidualTransferModal
         open={residualStatusOpen}
         onClose={() => setResidualStatusOpen(false)}
