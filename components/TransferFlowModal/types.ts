@@ -48,3 +48,5 @@ export const EMPTY_DRAFT: ResidualDraft = {
   destSlot: null,
   packedLines: [],
 };
+
+export type { TransferInfo } from "../types";
