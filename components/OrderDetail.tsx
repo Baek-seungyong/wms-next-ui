@@ -51,6 +51,19 @@ const locationBadgeClass = (loc: LocationStatus) => {
 /** ✅ 잔량 프로세스 단계 */
 type ResidualStep = "NONE" | "PREP_CALLING" | "READY_MOVE" | "DONE";
 
+type ManageTarget = {
+  code: string;
+  name: string;
+  orderEaQty: number;
+  pickingStock: number;
+  // "현재 토트 재고"로 쓸 값 (아이템에 있으면 사용, 없으면 0)
+  toteStock: number;
+  // 1BOX 내품수량(아이템에 있으면 사용, 없으면 0)
+  boxEa: number;
+  // 현재 위치 뱃지용
+  location: LocationStatus;
+};
+
 export function OrderDetail({
   order,
   items,
@@ -103,6 +116,22 @@ export function OrderDetail({
   };
   const isProductMarked = (code: string) => markedList.some((m) => m.code === code);
 
+  /* ================= 토트 재고(수정 반영용) =================
+   * - items는 props라 직접 바꾸기 어려우니까, 화면에서만 덮어씌우는 map으로 관리
+   */
+  const [toteStockMap, setToteStockMap] = useState<Record<string, number>>({});
+
+  const getToteStock = (it: OrderItem) => {
+    const code = (it as any).code ?? (it as any).itemCode ?? "";
+    const base =
+      (it as any).toteStock ??
+      (it as any).toteEaQty ??
+      (it as any).toteQty ??
+      (it as any).currentToteStock ??
+      0;
+    return toteStockMap[code] ?? Number(base ?? 0);
+  };
+
   /* ================= (신) 통합 모달 상태 ================= */
   const [flowOpen, setFlowOpen] = useState(false);
   const [flowTarget, setFlowTarget] = useState<{
@@ -110,6 +139,96 @@ export function OrderDetail({
     name: string;
     orderEaQty: number;
   } | null>(null);
+
+  /** ✅ 버튼 하나로 열기 */
+  const openTransferFlow = (code: string, name: string, orderEaQty: number) => {
+    setFlowTarget({ code, name, orderEaQty });
+    setFlowOpen(true);
+  };
+
+  /* ================= 제품관리(관리 버튼) 모달 ================= */
+  const [manageOpen, setManageOpen] = useState(false);
+  const [manageTarget, setManageTarget] = useState<ManageTarget | null>(null);
+
+  // 재고수정 입력값
+  const [editToteEa, setEditToteEa] = useState<string>("");
+
+  const openManageModalFromItem = (it: OrderItem) => {
+    const code = (it as any).code ?? (it as any).itemCode ?? "";
+    const name = (it as any).name ?? "";
+    const orderEaQty = Number((it as any).qty ?? (it as any).orderQty ?? 0);
+    const pickingStock = Number((it as any).pickingStock ?? (it as any).stockQty ?? 0);
+    const location: LocationStatus = locationMap[code] ?? "창고";
+
+    const toteStock = getToteStock(it);
+
+    const boxEa = Number(
+      (it as any).boxEa ??
+        (it as any).eaPerBox ??
+        (it as any).boxInnerEa ??
+        (it as any).unitsPerBox ??
+        0,
+    );
+
+    setManageTarget({
+      code,
+      name,
+      orderEaQty,
+      pickingStock,
+      toteStock,
+      boxEa,
+      location,
+    });
+
+    // 모달 열릴 때 입력값 기본 세팅 (현재 토트 재고)
+    setEditToteEa(String(toteStock));
+    setManageOpen(true);
+  };
+
+  const closeManageModal = () => {
+    setManageOpen(false);
+    setManageTarget(null);
+    setEditToteEa("");
+  };
+
+  const handleApplyToteStock = () => {
+    if (!manageTarget) return;
+
+    const next = Number(editToteEa);
+    if (!Number.isFinite(next) || next < 0) {
+      alert("재고는 0 이상의 숫자로 입력해줘.");
+      return;
+    }
+
+    setToteStockMap((prev) => ({ ...prev, [manageTarget.code]: next }));
+    alert(`"${manageTarget.name}" 토트 재고를 ${next.toLocaleString()} EA로 수정했어.`);
+    // 모달 상단 표시도 즉시 갱신되도록
+    setManageTarget((prev) => (prev ? { ...prev, toteStock: next } : prev));
+  };
+
+  const handleReplenish1Box = () => {
+    if (!manageTarget) return;
+
+    const boxEa = Number(manageTarget.boxEa ?? 0);
+    if (!boxEa || boxEa <= 0) {
+      alert("이 상품은 1BOX 내품수량(BOX EA)이 설정되어 있지 않아. 데이터에 boxEa를 넣어줘.");
+      return;
+    }
+
+    const cur = toteStockMap[manageTarget.code] ?? manageTarget.toteStock ?? 0;
+    const next = cur + boxEa;
+
+    // UI상 토트 재고 +1BOX 반영
+    setToteStockMap((prev) => ({ ...prev, [manageTarget.code]: next }));
+    setManageTarget((prev) => (prev ? { ...prev, toteStock: next } : prev));
+
+    // “입고중”으로 바꿔서 작업 흐름 느낌 주기
+    setLocationMap((prev) => ({ ...prev, [manageTarget.code]: "입고중" }));
+
+    alert(
+      `파렛트에서 1BOX 보충 호출!\n- 상품: ${manageTarget.name}\n- +${boxEa.toLocaleString()} EA\n- 토트 재고: ${next.toLocaleString()} EA`,
+    );
+  };
 
   /* ================= 무한루프 방지: 첫 아이템 프리뷰 ================= */
   const lastPreviewKeyRef = useRef<string>("");
@@ -142,12 +261,6 @@ export function OrderDetail({
 
   const handleHoldOrder = () => {
     onChangeStatus?.("보류" as OrderStatus);
-  };
-
-  /** ✅ 버튼 하나로 열기 */
-  const openTransferFlow = (code: string, name: string, orderEaQty: number) => {
-    setFlowTarget({ code, name, orderEaQty });
-    setFlowOpen(true);
   };
 
   return (
@@ -210,26 +323,26 @@ export function OrderDetail({
               <th className="border-b px-3 py-2 text-right">주문수량</th>
               <th className="border-b px-3 py-2 text-right">피킹창고 재고</th>
               <th className="border-b px-3 py-2 text-center">상태</th>
-              <th className="border-b px-3 py-2 text-center">AMR 호출</th>
+              <th className="border-b px-3 py-2 text-center">제품호출</th>
               <th className="border-b px-3 py-2 text-center">지정이송</th>
-              <th className="border-b px-3 py-2 text-center">위치</th>
-              <th className="border-b px-3 py-2 text-center">재고부족</th>
+              <th className="border-b px-3 py-2 text-center">토트박스 위치</th>
+              <th className="border-b px-3 py-2 text-center">재고관리</th>
             </tr>
           </thead>
 
           <tbody>
             {items.map((it) => {
-              const key = (it as any).code ?? (it as any).itemCode ?? "";
+              const code = (it as any).code ?? (it as any).itemCode ?? "";
               const name = (it as any).name ?? "";
-              const qty = (it as any).qty ?? (it as any).orderQty ?? 0;
-              const pickingStock = (it as any).pickingStock ?? (it as any).stockQty ?? 0;
+              const qty = Number((it as any).qty ?? (it as any).orderQty ?? 0);
+              const pickingStock = Number((it as any).pickingStock ?? (it as any).stockQty ?? 0);
               const lowStock = (it as any).lowStock;
 
-              const routeValue = amrRouteMap[key] ?? "피킹";
-              const location: LocationStatus = locationMap[key] ?? "창고";
-              const marked = isProductMarked(key);
+              const routeValue = amrRouteMap[code] ?? "피킹";
+              const location: LocationStatus = locationMap[code] ?? "창고";
+              const marked = isProductMarked(code);
 
-              const transferInfo = transferInfoMap[key];
+              const transferInfo = transferInfoMap[code];
               const isTransferring = transferInfo?.status === "이송중";
 
               // ✅ 잔량 계산(지정이송 잔량 - 잔량출고 누적)
@@ -238,11 +351,11 @@ export function OrderDetail({
               const remainEa = Math.max(0, baseRemain - residualDone);
 
               // ✅ 잔량 프로세스 단계
-              const residualStep: ResidualStep = residualStepMap[key] ?? "NONE";
+              const residualStep: ResidualStep = residualStepMap[code] ?? "NONE";
 
               // ✅ 잔량 프로세스가 한번이라도 시작됐으면 버튼 유지
               const hasResidualFlow =
-                residualStep !== "NONE" || remainEa > 0 || !!residualInfoMap[key];
+                residualStep !== "NONE" || remainEa > 0 || !!residualInfoMap[code];
 
               const handleRowClick = () => {
                 onSelectItemForPreview?.(it);
@@ -265,23 +378,23 @@ export function OrderDetail({
               const handleTransferButtonClick = () => {
                 // ✅ DONE이면 결과 모달(ResidualTransferModal)로
                 if (isTransferring && hasResidualFlow && residualStep === "DONE") {
-                  setResidualStatusTargetCode(key);
+                  setResidualStatusTargetCode(code);
                   setResidualStatusOpen(true);
                   return;
                 }
 
                 // ✅ 그 외는 통합 모달 열기(2/3스텝 이어서 가능)
-                openTransferFlow(key, name, Number(qty));
+                openTransferFlow(code, name, Number(qty));
 
                 // ✅ 잔량 남아있는데 단계 NONE이면 2단계 시작
                 if (isTransferring && remainEa > 0 && residualStep === "NONE") {
-                  setResidualStepMap((prev) => ({ ...prev, [key]: "PREP_CALLING" }));
+                  setResidualStepMap((prev) => ({ ...prev, [code]: "PREP_CALLING" }));
                 }
               };
 
               return (
                 <tr
-                  key={key}
+                  key={code}
                   className="cursor-pointer bg-white hover:bg-blue-50"
                   onClick={handleRowClick}
                 >
@@ -313,7 +426,7 @@ export function OrderDetail({
                       <select
                         className="rounded border px-2 py-0.5 text-[11px]"
                         value={routeValue}
-                        onChange={(e) => setAmrRouteMap((prev) => ({ ...prev, [key]: e.target.value }))}
+                        onChange={(e) => setAmrRouteMap((prev) => ({ ...prev, [code]: e.target.value }))}
                       >
                         <option value="피킹">피킹</option>
                         <option value="파렛트">파렛트</option>
@@ -331,7 +444,7 @@ export function OrderDetail({
                             alert(`제품 "${productName}" 파렛트가 피킹라인으로 호출되었습니다.`);
                           }
 
-                          setLocationMap((prev) => ({ ...prev, [key]: "입고중" }));
+                          setLocationMap((prev) => ({ ...prev, [code]: "입고중" }));
 
                           const cur = (order as any).status;
                           if (onChangeStatus && (cur === "대기" || cur === "보류")) {
@@ -365,9 +478,7 @@ export function OrderDetail({
                       {isTransferring && (
                         <div className="text-[11px] text-gray-500">
                           잔량{" "}
-                          <span className="font-semibold text-gray-700">
-                            {remainEa.toLocaleString()}
-                          </span>
+                          <span className="font-semibold text-gray-700">{remainEa.toLocaleString()}</span>
                         </div>
                       )}
                     </div>
@@ -384,19 +495,19 @@ export function OrderDetail({
                     </span>
                   </td>
 
-                  {/* 재고부족(마킹) */}
+                  {/* 재고관리(모달) */}
                   <td className="border-t px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
-                      onClick={() => handleToggleMark(key, name)}
-                      className={`mx-auto inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] border transition ${
+                      onClick={() => openManageModalFromItem(it)}
+                      className={`mx-auto inline-flex items-center justify-center rounded-md px-3 py-1 text-[12px] border transition font-medium ${
                         marked
-                          ? "border-amber-400 bg-amber-50 text-amber-700"
-                          : "border-gray-300 bg-white text-gray-500 hover:bg-gray-50"
+                          ? "border-blue-600 bg-blue-600 text-white hover:opacity-90"
+                          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
                       }`}
-                      title={marked ? "마킹 해제" : "나중에 재고 보충이 필요하면 눌러두세요"}
+                      title="제품 관리창 열기"
                     >
-                      <span className="text-[13px] leading-none">{marked ? "★" : "☆"}</span>
+                      관리
                     </button>
                   </td>
                 </tr>
@@ -431,6 +542,164 @@ export function OrderDetail({
           </button>
         </div>
       </div>
+
+      {/* ================= 제품관리 모달 ================= */}
+      {manageOpen && manageTarget && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4"
+          onClick={closeManageModal}
+        >
+          <div
+            className="w-[560px] max-w-[95vw] rounded-2xl bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b p-5">
+              <div>
+                <div className="text-base font-semibold">제품 관리</div>
+                <div className="mt-1 text-sm text-gray-700">
+                  {manageTarget.name} <span className="text-gray-400">({manageTarget.code})</span>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-600">
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5">
+                    주문: <b className="text-gray-800">{manageTarget.orderEaQty.toLocaleString()}</b> EA
+                  </span>
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5">
+                    피킹재고: <b className="text-gray-800">{manageTarget.pickingStock.toLocaleString()}</b> EA
+                  </span>
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5">
+                    토트재고: <b className="text-gray-800">{(toteStockMap[manageTarget.code] ?? manageTarget.toteStock).toLocaleString()}</b> EA
+                  </span>
+                  <span className={`rounded-full px-2 py-0.5 ${locationBadgeClass(locationMap[manageTarget.code] ?? manageTarget.location)}`}>
+                    {locationMap[manageTarget.code] ?? manageTarget.location}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50"
+                onClick={closeManageModal}
+              >
+                닫기
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              {/* 1) 재고부족 마킹 */}
+              <section className="rounded-xl border p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold">재고부족 마킹</div>
+                    <div className="mt-1 text-[11px] text-gray-500">
+                      “보충 필요”로 표시해두고, 나중에 재고관리에서 모아서 볼 때 쓰는 용도
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleToggleMark(manageTarget.code, manageTarget.name)}
+                    className={`inline-flex items-center justify-center rounded-md px-3 py-1 text-[12px] border transition font-medium ${
+                      isProductMarked(manageTarget.code)
+                        ? "border-blue-600 bg-blue-600 text-white hover:opacity-90"
+                        : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                    }`}
+                  >
+                    {isProductMarked(manageTarget.code) ? "관리중" : "관리필요"}
+                  </button>
+                </div>
+              </section>
+
+              {/* 2) 현재 재고 수정 */}
+              <section className="rounded-xl border p-4">
+                <div className="text-sm font-semibold">현재 재고 수정 (토트)</div>
+                <div className="mt-1 text-[11px] text-gray-500">
+                  토트 재고가 실제와 다를 때 바로 정정해
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    className="w-44 rounded-md border px-3 py-2 text-sm"
+                    value={editToteEa}
+                    onChange={(e) => setEditToteEa(e.target.value)}
+                    placeholder="현재 토트 재고(EA)"
+                  />
+                  <button
+                    type="button"
+                    className="rounded-md bg-gray-900 px-3 py-2 text-sm text-white hover:opacity-90"
+                    onClick={handleApplyToteStock}
+                  >
+                    수정 적용
+                  </button>
+
+                  <div className="text-[11px] text-gray-500">
+                    현재 표시:{" "}
+                    <b className="text-gray-800">
+                      {(toteStockMap[manageTarget.code] ?? manageTarget.toteStock).toLocaleString()}
+                    </b>{" "}
+                    EA
+                  </div>
+                </div>
+              </section>
+
+              {/* 3) 1BOX 보충 호출 */}
+              <section className="rounded-xl border p-4">
+                <div className="text-sm font-semibold">1BOX 보충 호출 (파렛트 → 토트)</div>
+                <div className="mt-1 text-[11px] text-gray-500">
+                  토트 재고가 부족할 때, 파렛트에서 1박스만 빠르게 보충
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-[11px] text-gray-600">
+                    1BOX 내품:{" "}
+                    <b className="text-gray-800">
+                      {(manageTarget.boxEa ?? 0).toLocaleString()}
+                    </b>{" "}
+                    EA
+                    {!manageTarget.boxEa ? (
+                      <span className="ml-2 text-red-500">
+                        (boxEa 없음 — 데이터에 boxEa/eaPerBox 넣어줘)
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
+                    onClick={handleReplenish1Box}
+                    disabled={!manageTarget.boxEa || manageTarget.boxEa <= 0}
+                  >
+                    1BOX 보충 호출
+                  </button>
+                </div>
+
+                <div className="mt-2 text-[11px] text-gray-500">
+                  보충 후 예상 토트재고:{" "}
+                  <b className="text-gray-800">
+                    {(
+                      (toteStockMap[manageTarget.code] ?? manageTarget.toteStock) +
+                      (manageTarget.boxEa ?? 0)
+                    ).toLocaleString()}
+                  </b>{" "}
+                  EA
+                </div>
+              </section>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t p-4">
+              <button
+                type="button"
+                className="rounded-md border px-4 py-2 text-sm hover:bg-gray-50"
+                onClick={closeManageModal}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ================= (신) 통합 모달 ================= */}
       <TransferFlowModal

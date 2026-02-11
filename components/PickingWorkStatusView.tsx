@@ -3,7 +3,7 @@
 
 import { useMemo } from "react";
 
-type PickingStage = "입고중" | "작업중";
+type PickingStage = "호출중" | "포장중";
 
 interface PickingItem {
   id: string;
@@ -35,7 +35,7 @@ interface RobotInfo {
   progress: number;
 }
 
-/** ✅ 작업중(=출고중) 주문 요약 타입 */
+/** ✅ 포장중(=출고중) 주문 요약 타입 */
 export type ActiveOrderSummary = {
   orderNo: string;
   customerName: string;
@@ -51,10 +51,10 @@ type Props = {
 // 더미 데이터 (예시)
 // ----------------------
 const MOCK_PICKING_ITEMS: PickingItem[] = [
-  { id: "IN-001", stage: "입고중", productName: "T20 트레이 20구", orderNo: "ORD-20251125-001" },
-  { id: "IN-002", stage: "입고중", productName: "PET 500ml 투명", orderNo: "ORD-20251125-002" },
-  { id: "WK-001", stage: "작업중", productName: "T20 트레이 20구", orderNo: "ORD-20251125-001" },
-  { id: "WK-002", stage: "작업중", productName: "PET 2L 투명", orderNo: "ORD-20251125-003" },
+  { id: "IN-001", stage: "호출중", productName: "T20 트레이 20구", orderNo: "ORD-20251125-001" },
+  { id: "IN-002", stage: "호출중", productName: "PET 500ml 투명", orderNo: "ORD-20251125-002" },
+  { id: "WK-001", stage: "포장중", productName: "T20 트레이 20구", orderNo: "ORD-20251125-001" },
+  { id: "WK-002", stage: "포장중", productName: "PET 2L 투명", orderNo: "ORD-20251125-003" },
 ];
 
 const MOCK_ACTIVE_ORDERS: ActiveOrderSummary[] = [
@@ -120,7 +120,7 @@ const MOCK_ROBOTS: RobotInfo[] = [
 // 유틸
 // ----------------------
 function stageColor(stage: PickingStage) {
-  if (stage === "입고중") return "border-blue-200 bg-blue-50/60";
+  if (stage === "호출중") return "border-blue-200 bg-blue-50/60";
   return "border-gray-200 bg-gray-50";
 }
 
@@ -166,11 +166,11 @@ function CardShell({
 // ----------------------
 export function PickingWorkStatusView({ activeOrders }: Props) {
   const inboundItems = useMemo(
-    () => MOCK_PICKING_ITEMS.filter((i) => i.stage === "입고중"),
+    () => MOCK_PICKING_ITEMS.filter((i) => i.stage === "호출중"),
     [],
   );
   const workingItems = useMemo(
-    () => MOCK_PICKING_ITEMS.filter((i) => i.stage === "작업중"),
+    () => MOCK_PICKING_ITEMS.filter((i) => i.stage === "포장중"),
     [],
   );
 
@@ -180,17 +180,17 @@ export function PickingWorkStatusView({ activeOrders }: Props) {
     <div className="h-[calc(100vh-120px)]">
       {/* ✅ 섹션 구분감을 위해 바탕을 살짝 깔아줌 */}
       <div className="grid h-full grid-cols-[minmax(0,1fr)_360px_360px] gap-4 rounded-2xl bg-slate-50/60 p-3">
-        {/* (1) 좌측: 입고중/작업중 */}
+        {/* (1) 좌측: 호출중/포장중 */}
         <div className="min-w-0 w-full">
           <CardShell
             title="피킹존 작업 현황판"
             right={
               <div className="text-right text-[11px] text-gray-500">
-                입고중{" "}
+                호출중{" "}
                 <span className="font-semibold text-blue-600">
                   {inboundItems.length}건
                 </span>{" "}
-                · 작업중{" "}
+                · 포장중{" "}
                 <span className="font-semibold text-emerald-600">
                   {workingItems.length}건
                 </span>
@@ -198,8 +198,8 @@ export function PickingWorkStatusView({ activeOrders }: Props) {
             }
           >
             <div className="grid h-[calc(100vh-120px-24px-56px-32px)] grid-cols-2 gap-3">
-              {(["입고중", "작업중"] as PickingStage[]).map((stage) => {
-                const list = stage === "입고중" ? inboundItems : workingItems;
+              {(["호출중", "포장중"] as PickingStage[]).map((stage) => {
+                const list = stage === "호출중" ? inboundItems : workingItems;
 
                 return (
                   <div
@@ -245,7 +245,7 @@ export function PickingWorkStatusView({ activeOrders }: Props) {
           </CardShell>
         </div>
 
-        {/* (2) 가운데: 작업중 주문 요약(출고중 주문) */}
+        {/* (2) 가운데: 포장중 주문 요약(출고중 주문) */}
         <div className="w-full">
           <CardShell
             title="주문 처리 현황"
