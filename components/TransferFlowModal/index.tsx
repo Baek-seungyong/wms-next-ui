@@ -186,11 +186,8 @@ export function TransferFlowModal({
 
     setDirectInfo(existingTransfer);
 
-    // 1STEP 기본 입력: 계획 파렛트 수량
-    setDirectPalletQty((v) => {
-      if (v > 0) return v;
-      return plan.pallets ?? 0;
-    });
+    // ✅ 1STEP 기본 입력: "항상" 포장계획(계획 파렛트 수량)으로 리셋
+    setDirectPalletQty(plan.pallets ?? 0);
   }, [open, initialStep, initialDraft, existingTransfer, plan.pallets, plan.boxes, plan.eas]);
 
   const setDraftSafe = (next: ResidualDraft, stepToSave: TransferFlowStep) => {
