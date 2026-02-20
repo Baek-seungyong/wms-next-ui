@@ -128,7 +128,6 @@ export function Step1DirectTransfer({
         <div className="space-y-0.5">
           <div className="text-[13px] font-semibold">지정이송(풀파렛트)</div>
           <div className="text-[12px] text-gray-600">
-            계획: <span className="font-semibold text-gray-900">{planText}</span>
             <span className="mx-2 text-gray-300">|</span>
             주문 <span className="font-semibold">{Number(orderEaQty).toLocaleString()}</span> EA
           </div>
