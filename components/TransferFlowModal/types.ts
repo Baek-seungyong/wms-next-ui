@@ -1,52 +1,62 @@
 // components/TransferFlowModal/types.ts
+export type TransferFlowStep = 1 | 2 | 3 | 4;
 
-export type TransferFlowStep = 1 | 2 | 3;
-
-/**
- * 잔량 프로세스 임시저장 Draft
- * - 2STEP: 파렛트/토트 호출 결과(called ids)
- * - 3STEP: 호출된 파렛트/토트에서 출고할 EA 수량 입력, 빈파렛트/목적지 입력
- */
 export type ResidualDraft = {
-  // (선택) 화면 모드
-  view?: "WORK" | "RESULT";
+  /** 계획(표시용/기본값 저장용) */
+  planPalletQty?: number;
+  planBoxQty?: number;
+  planEaQty?: number;
 
-  // 2STEP에서 호출한 대상
-  calledPalletIds: string[];
-  calledToteIds: string[];
+  /** 2STEP: 잔량 파렛트(박스) */
+  calledResidualPalletIds?: string[];
+  residualPalletMeta?: Record<
+    string,
+    {
+      eaPerBox?: number;
+      boxQty?: number;
+      totalEa?: number;
+    }
+  >;
+  residualBoxPickMap?: Record<string, number>;
+  boxDestSlot?: string | null;
 
-  calledPalletMeta?: Record<string, { boxQty: number; totalEa: number; eaPerBox: number }>;
-  calledToteMeta?: Record<string, { totalEa: number; eaPerBox: number }>;
+  /** 3STEP: 토트(EA) */
+  calledToteIds?: string[];
+  toteMeta?: Record<
+    string,
+    {
+      totalEa: number;
+      lotNo?: string;
+      location?: string;
+    }
+  >;
+  toteEaPickMap?: Record<string, number>;
+  eaDestSlot?: string | null;
 
-  // 3STEP에서 출고할 EA 수량 입력(파렛트/토트별)
-  palletBoxPickMap: Record<string, number>; // key: palletId, value: EA
-  toteEaPickMap: Record<string, number>; // key: toteId, value: EA
+  /** 4STEP: 합포 파렛트 */
+  consolidationPalletId?: string | null;
 
-  // 3STEP에서 입력
-  emptyPalletId: string;
-  destSlot: string | null;
-
-  // 3STEP 확정 라인(소스 내역)
-  packedLines: Array<{
-    sourceType: "PALLET" | "TOTE";
-    sourceId: string;
-    eaQty: number;
-    lotNo?: string;
-    fromLocation?: string;
-  }>;
+  /** ✅ 4STEP: 합포 파렛트 목적지 */
+  consolidationDestSlot?: string | null; // 최종 목적지(자동/수동 공통 결과)
+  consolidationDestMode?: "AUTO" | "MANUAL"; // 기본 AUTO
 };
 
 export const EMPTY_DRAFT: ResidualDraft = {
-  view: "WORK",
-  calledPalletIds: [],
-  calledToteIds: [],
-  calledPalletMeta: {},
-  calledToteMeta: {},
-  palletBoxPickMap: {},
-  toteEaPickMap: {},
-  emptyPalletId: "",
-  destSlot: null,
-  packedLines: [],
-};
+  planPalletQty: undefined,
+  planBoxQty: undefined,
+  planEaQty: undefined,
 
-export type { TransferInfo } from "../types";
+  calledResidualPalletIds: [],
+  residualPalletMeta: {},
+  residualBoxPickMap: {},
+  boxDestSlot: null,
+
+  calledToteIds: [],
+  toteMeta: {},
+  toteEaPickMap: {},
+  eaDestSlot: null,
+
+  consolidationPalletId: null,
+  consolidationDestSlot: null,
+  consolidationDestMode: "AUTO",
+};

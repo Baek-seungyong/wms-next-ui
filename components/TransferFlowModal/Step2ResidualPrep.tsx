@@ -1,317 +1,272 @@
 // components/TransferFlowModal/Step2ResidualPrep.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { ResidualDraft } from "./types";
 
-type PalletRow = {
+type ResidualPalletRow = {
   id: string;
-  productName: string;
   lotNo: string;
   location: string;
-  boxQty: number;
-  totalEa: number;
-};
-
-type ToteRow = {
-  id: string;
-  productName: string;
-  lotNo: string;
-  location: string;
-  totalEa: number;
+  boxQty: number; // 파렛트 위 박스 수량
+  eaPerBox: number; // 박스당 EA
 };
 
 type Props = {
   productCode: string;
   productName: string;
-  remainingEaQty: number;
+
+  /** 목표(박스 단위) */
+  targetBoxQty: number;
+
+  /** 단위(박스당 EA) */
+  eaPerBox?: number;
+
+  /** 계획표시(상단/각 STEP 공통) */
+  planPalletQty: number | null;
+  planBoxQty: number | null;
+  planEaQty: number | null;
 
   draft: ResidualDraft;
   onChangeDraft: (next: ResidualDraft) => void;
-
-  // 호출 확정(호출만) -> Step3로
-  onConfirmCalling: (nextDraft: ResidualDraft) => void;
-
-  onBack?: () => void;
 };
 
 export function Step2ResidualPrep({
   productCode,
   productName,
-  remainingEaQty,
+  targetBoxQty,
+  eaPerBox,
+  planPalletQty,
+  planBoxQty,
+  planEaQty,
   draft,
   onChangeDraft,
-  onConfirmCalling,
-  onBack,
 }: Props) {
-  const [open, setOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  // ✅ 더미 데이터 (기존에 너가 만들던 방식 그대로 “표에서 선택” 형태 유지)
-  const palletRows: PalletRow[] = useMemo(
+  // ✅ 더미 후보(나중에 실데이터로 교체)
+  const rows: ResidualPalletRow[] = useMemo(
     () => [
       {
-        id: `${productCode}-PAL-01`,
-        productName,
+        id: `${productCode}-RES-PAL-01`,
         lotNo: "LOT-2501-A",
-        location: "2층창고",
-        boxQty: 10,
-        totalEa: 1200,
+        location: "2층 잔량랙",
+        boxQty: 18,
+        eaPerBox: eaPerBox ?? 0,
       },
       {
-        id: `${productCode}-PAL-02`,
-        productName,
+        id: `${productCode}-RES-PAL-02`,
         lotNo: "LOT-2501-B",
-        location: "3층창고",
-        boxQty: 8,
-        totalEa: 960,
+        location: "2층 잔량랙",
+        boxQty: 6,
+        eaPerBox: eaPerBox ?? 0,
       },
       {
-        id: `${productCode}-PAL-03`,
-        productName,
-        lotNo: "LOT-2501-C",
-        location: "2층창고",
-        boxQty: 6,
-        totalEa: 720,
+        id: `${productCode}-RES-PAL-03`,
+        lotNo: "LOT-2412-C",
+        location: "2층 잔량랙",
+        boxQty: 30,
+        eaPerBox: eaPerBox ?? 0,
       },
     ],
-    [productCode, productName],
+    [productCode, eaPerBox],
   );
 
-  const toteRows: ToteRow[] = useMemo(
-    () => [
-      { id: `${productCode}-TOTE-01`, productName, lotNo: "LOT-2501-A", location: "피킹라인", totalEa: 120 },
-      { id: `${productCode}-TOTE-02`, productName, lotNo: "LOT-2501-A", location: "피킹라인", totalEa: 80 },
-    ],
-    [productCode, productName],
+  // 기본값: 목표 박스 수량을 draft에 채움(한번만)
+  useEffect(() => {
+    if (!Number.isFinite(targetBoxQty)) return;
+    if ((draft.planBoxQty ?? null) == null && (planBoxQty ?? null) != null) {
+      onChangeDraft({ ...draft, planBoxQty });
+      return;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const planText = useMemo(() => {
+    const p = planPalletQty == null ? "-" : `${planPalletQty}P`;
+    const b = planBoxQty == null ? "-" : `${planBoxQty}BOX`;
+    const e = planEaQty == null ? "-" : `${planEaQty}EA`;
+    return `${p} · ${b} · ${e}`;
+  }, [planPalletQty, planBoxQty, planEaQty]);
+
+  const selectedIds = draft.calledResidualPalletIds ?? [];
+  const pickedTotalBox = Object.values(draft.residualBoxPickMap || {}).reduce(
+    (a, b) => a + Number(b || 0),
+    0,
   );
 
-  /** ✅ 파렛트 선택 토글 + meta 저장(BOX/전체/내품) */
-  const toggleCalledPallet = (id: string) => {
-    const row = palletRows.find((r) => r.id === id);
+  const handleAutoCall = () => {
+    // ✅ 규칙: 목표 박스수량보다 많이 얹힌 파렛트 중 “가장 오래된(=목록 앞)” 하나 선택
+    const row = rows.find((r) => r.boxQty >= targetBoxQty && targetBoxQty > 0) ?? rows[0];
+    if (!row) return;
 
-    const nextIds = draft.calledPalletIds.includes(id)
-      ? draft.calledPalletIds.filter((x) => x !== id)
-      : [...draft.calledPalletIds, id];
+    const next = { ...draft };
 
-    const nextMeta = { ...(draft.calledPalletMeta || {}) };
-
-    if (nextIds.includes(id)) {
-      if (row) {
-        nextMeta[id] = {
-          boxQty: row.boxQty,
-          totalEa: row.totalEa,
-          eaPerBox: 120, // ✅ 임시 내품수량
-        };
-      }
-    } else {
-      delete nextMeta[id];
-    }
-
-    onChangeDraft({ ...draft, calledPalletIds: nextIds, calledPalletMeta: nextMeta });
-  };
-
-  /** ✅ 토트 선택 토글 + meta 저장(전체/내품) */
-  const toggleCalledTote = (id: string) => {
-    const row = toteRows.find((r) => r.id === id);
-
-    const nextIds = draft.calledToteIds.includes(id)
-      ? draft.calledToteIds.filter((x) => x !== id)
-      : [...draft.calledToteIds, id];
-
-    const nextMeta = { ...(draft.calledToteMeta || {}) };
-
-    if (nextIds.includes(id)) {
-      if (row) {
-        nextMeta[id] = {
-          totalEa: row.totalEa,
-          eaPerBox: 120, // ✅ 임시 내품수량
-        };
-      }
-    } else {
-      delete nextMeta[id];
-    }
-
-    onChangeDraft({ ...draft, calledToteIds: nextIds, calledToteMeta: nextMeta });
-  };
-
-  const summaryText = useMemo(() => {
-    const p = draft.calledPalletIds;
-    const t = draft.calledToteIds;
-    return {
-      pallet: p.length ? p.join(", ") : "-",
-      tote: t.length ? t.join(", ") : "-",
-      palletCount: p.length,
-      toteCount: t.length,
+    next.calledResidualPalletIds = [row.id];
+    next.residualPalletMeta = {
+      ...(next.residualPalletMeta || {}),
+      [row.id]: { boxQty: row.boxQty, eaPerBox: row.eaPerBox },
     };
-  }, [draft.calledPalletIds, draft.calledToteIds]);
+    next.residualBoxPickMap = {
+      ...(next.residualBoxPickMap || {}),
+      [row.id]: Math.max(0, targetBoxQty || 0),
+    };
+
+    onChangeDraft(next);
+  };
+
+  const handleManualPick = (row: ResidualPalletRow) => {
+    const next = { ...draft };
+
+    const cur = new Set(next.calledResidualPalletIds || []);
+    cur.add(row.id);
+    next.calledResidualPalletIds = Array.from(cur);
+
+    next.residualPalletMeta = {
+      ...(next.residualPalletMeta || {}),
+      [row.id]: { boxQty: row.boxQty, eaPerBox: row.eaPerBox },
+    };
+
+    // 기본 입력값: 목표 박스 수량 (이미 있으면 유지)
+    next.residualBoxPickMap = {
+      ...(next.residualBoxPickMap || {}),
+      [row.id]:
+        Number(next.residualBoxPickMap?.[row.id] ?? 0) > 0
+          ? Number(next.residualBoxPickMap?.[row.id] ?? 0)
+          : Math.max(0, targetBoxQty || 0),
+    };
+
+    onChangeDraft(next);
+  };
+
+  const removeSelected = (id: string) => {
+    const next = { ...draft };
+    next.calledResidualPalletIds = (next.calledResidualPalletIds || []).filter((x) => x !== id);
+    const { [id]: _, ...rest } = next.residualBoxPickMap || {};
+    next.residualBoxPickMap = rest;
+    onChangeDraft(next);
+  };
 
   return (
-    <div className="rounded-2xl border bg-white p-4">
-      <div className="flex items-start justify-between gap-3">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-[13px] font-semibold">2 STEP · 파렛트/토트 호출</div>
+          <div className="text-[13px] font-semibold">파렛트 호출(박스 단위)</div>
           <div className="mt-1 text-[12px] text-gray-600">
-            잔량 <span className="font-semibold text-gray-900">{Number(remainingEaQty).toLocaleString()}</span> EA를
-            처리하기 위해 파렛트/토트를 호출해.
+            목표 박스수량: <span className="font-semibold">{Number(targetBoxQty).toLocaleString()}</span> BOX
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {onBack && (
-            <button
-              type="button"
-              className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-              onClick={onBack}
-            >
-              이전
-            </button>
-          )}
           <button
             type="button"
-            className="rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700"
-            onClick={() => setOpen(true)}
+            onClick={handleAutoCall}
+            className="rounded-full bg-gray-900 px-3 py-1 text-[12px] font-semibold text-white hover:opacity-90"
           >
-            호출 상세창 열기
+          파렛트 호출
+          </button>
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            className="rounded-full border bg-white px-3 py-1 text-[12px] text-gray-700 hover:bg-gray-50"
+          >
+            지정호출
           </button>
         </div>
       </div>
 
-      {/* ✅ 요약 */}
-      <div className="mt-3 rounded-xl border bg-gray-50 p-3 text-[12px]">
-        <div className="flex items-center justify-between">
-          <div className="text-gray-600">호출 파렛트</div>
-          <div className="font-medium text-gray-900">
-            {summaryText.palletCount}개 · {summaryText.pallet}
+      {/* 지정호출 패널(간단 버전) */}
+      {pickerOpen ? (
+        <div className="rounded-xl border bg-white p-3">
+          <div className="mb-2 text-[12px] font-semibold text-gray-700">
+            잔량 파렛트 후보 ({rows.length})
           </div>
-        </div>
-        <div className="mt-1 flex items-center justify-between">
-          <div className="text-gray-600">호출 토트</div>
-          <div className="font-medium text-gray-900">
-            {summaryText.toteCount}개 · {summaryText.tote}
-          </div>
-        </div>
-      </div>
-
-      {/* ✅ Step2 상세 모달 */}
-      {open && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
-          <div className="h-[680px] w-[980px] overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <div>
-                <div className="text-[13px] font-semibold">2 STEP · 호출 상세</div>
-                <div className="text-[12px] text-gray-600">
-                  상품: <span className="font-medium text-gray-900">{productName}</span>{" "}
-                  <span className="text-gray-400">({productCode})</span>
-                </div>
-              </div>
+          <div className="space-y-2">
+            {rows.map((r) => (
               <button
+                key={r.id}
                 type="button"
-                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                onClick={() => setOpen(false)}
+                onClick={() => handleManualPick(r)}
+                className="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[12px] hover:bg-gray-50"
               >
-                닫기
+                <div>
+                  <div className="font-semibold text-gray-900">{r.id}</div>
+                  <div className="mt-0.5 text-[11px] text-gray-500">
+                    {r.location} · {r.lotNo}
+                  </div>
+                </div>
+                <div className="text-right text-[11px] text-gray-600">
+                  <div>잔량 {r.boxQty.toLocaleString()} BOX</div>
+                  <div>ea/box {Number(r.eaPerBox || 0).toLocaleString()}</div>
+                </div>
               </button>
-            </div>
-
-            <div className="h-[calc(680px-56px)] overflow-auto p-4">
-              {/* 파렛트 */}
-              <div className="rounded-xl border bg-white p-3">
-                <div className="text-[12px] font-semibold text-gray-900">파렛트 내역</div>
-                <div className="mt-2 overflow-auto rounded-lg border bg-gray-50">
-                  <table className="min-w-full border-collapse text-[12px]">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="border-b px-3 py-2 text-left">선택</th>
-                        <th className="border-b px-3 py-2 text-left">파렛트ID</th>
-                        <th className="border-b px-3 py-2 text-left">상품명</th>
-                        <th className="border-b px-3 py-2 text-left">LOT</th>
-                        <th className="border-b px-3 py-2 text-left">위치</th>
-                        <th className="border-b px-3 py-2 text-right">BOX</th>
-                        <th className="border-b px-3 py-2 text-right">전체수량(EA)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {palletRows.map((r) => {
-                        const checked = draft.calledPalletIds.includes(r.id);
-                        return (
-                          <tr key={r.id} className="bg-white">
-                            <td className="border-t px-3 py-2">
-                              <input type="checkbox" checked={checked} onChange={() => toggleCalledPallet(r.id)} />
-                            </td>
-                            <td className="border-t px-3 py-2">{r.id}</td>
-                            <td className="border-t px-3 py-2">{r.productName}</td>
-                            <td className="border-t px-3 py-2">{r.lotNo}</td>
-                            <td className="border-t px-3 py-2">{r.location}</td>
-                            <td className="border-t px-3 py-2 text-right">{r.boxQty}</td>
-                            <td className="border-t px-3 py-2 text-right">{r.totalEa.toLocaleString()}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* 토트 */}
-              <div className="mt-4 rounded-xl border bg-white p-3">
-                <div className="text-[12px] font-semibold text-gray-900">토트 내역</div>
-                <div className="mt-2 overflow-auto rounded-lg border bg-gray-50">
-                  <table className="min-w-full border-collapse text-[12px]">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="border-b px-3 py-2 text-left">선택</th>
-                        <th className="border-b px-3 py-2 text-left">토트ID</th>
-                        <th className="border-b px-3 py-2 text-left">상품명</th>
-                        <th className="border-b px-3 py-2 text-left">LOT</th>
-                        <th className="border-b px-3 py-2 text-left">위치</th>
-                        <th className="border-b px-3 py-2 text-right">전체수량(EA)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {toteRows.map((r) => {
-                        const checked = draft.calledToteIds.includes(r.id);
-                        return (
-                          <tr key={r.id} className="bg-white">
-                            <td className="border-t px-3 py-2">
-                              <input type="checkbox" checked={checked} onChange={() => toggleCalledTote(r.id)} />
-                            </td>
-                            <td className="border-t px-3 py-2">{r.id}</td>
-                            <td className="border-t px-3 py-2">{r.productName}</td>
-                            <td className="border-t px-3 py-2">{r.lotNo}</td>
-                            <td className="border-t px-3 py-2">{r.location}</td>
-                            <td className="border-t px-3 py-2 text-right">{r.totalEa.toLocaleString()}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="rounded-full border border-gray-300 bg-white px-4 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                  onClick={() => setOpen(false)}
-                >
-                  취소
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full bg-emerald-600 px-4 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
-                  onClick={() => {
-                    // 호출만 확정 -> Step3로
-                    setOpen(false);
-                    onConfirmCalling(draft);
-                  }}
-                >
-                  호출 완료
-                </button>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
-      )}
+      ) : null}
+
+      {/* 선택된 잔량 파렛트 + 박스 수량 입력 */}
+      <div className="rounded-xl border bg-white p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-[12px] font-semibold text-gray-700">
+            호출된 파렛트 ({selectedIds.length})
+          </div>
+          <div className="text-[11px] text-gray-500">
+            입력 합계: <b className="text-gray-900">{pickedTotalBox.toLocaleString()}</b> BOX
+          </div>
+        </div>
+
+        {selectedIds.length === 0 ? (
+          <div className="text-[12px] text-gray-500"></div>
+        ) : (
+          <div className="space-y-2">
+            {selectedIds.map((id) => {
+              const meta = draft.residualPalletMeta?.[id];
+              const maxBox = Number(meta?.boxQty ?? 0);
+              const val = Number(draft.residualBoxPickMap?.[id] ?? 0);
+
+              return (
+                <div
+                  key={id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
+                >
+                  <div>
+                    <div className="text-[12px] font-semibold text-gray-900">{id}</div>
+                    <div className="mt-0.5 text-[11px] text-gray-500">
+                      잔량 {maxBox.toLocaleString()} BOX
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={maxBox || undefined}
+                      className="w-24 rounded-md border px-2 py-1 text-[12px]"
+                      value={val}
+                      onChange={(e) => {
+                        const nextVal = Math.max(0, Number(e.target.value || 0));
+                        onChangeDraft({
+                          ...draft,
+                          residualBoxPickMap: { ...(draft.residualBoxPickMap || {}), [id]: nextVal },
+                        });
+                      }}
+                    />
+                    <span className="text-[12px] text-gray-600">BOX</span>
+                    <button
+                      type="button"
+                      onClick={() => removeSelected(id)}
+                      className="rounded-md border px-2 py-1 text-[12px] text-gray-600 hover:bg-gray-50"
+                    >
+                      제거
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

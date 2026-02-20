@@ -22,6 +22,7 @@ import {
 import { TransferFlowModal } from "./TransferFlowModal";
 import type { ResidualDraft, TransferFlowStep } from "./TransferFlowModal/types";
 import { ResidualTransferModal } from "./ResidualTransferModal";
+import { ProductManageModal } from "./ProductManageModal";
 
 type Props = {
   order: Order | null;
@@ -144,6 +145,43 @@ export function OrderDetail({
   const openTransferFlow = (code: string, name: string, orderEaQty: number) => {
     setFlowTarget({ code, name, orderEaQty });
     setFlowOpen(true);
+  };
+
+  /** ================= 단위 정보(계산용) =================
+   * - TransferFlowModal 상단의 '파렛트/박스/낱개' 자동 계산용
+   * - 데이터가 없으면 0으로 들어가서 계산이 일부/전체 비활성화됨
+   */
+  const getEaPerBoxByCode = (code: string) => {
+    const it = items.find((x) => ((x as any).code ?? (x as any).itemCode ?? "") === code);
+    if (!it) return 0;
+    return Number(
+      (it as any).boxEa ??
+        (it as any).eaPerBox ??
+        (it as any).boxInnerEa ??
+        (it as any).unitsPerBox ??
+        0,
+    );
+  };
+
+  const getEaPerPalletByCode = (code: string) => {
+    const it = items.find((x) => ((x as any).code ?? (x as any).itemCode ?? "") === code);
+    if (!it) return 0;
+    return Number(
+      (it as any).palletEa ??
+        (it as any).eaPerPallet ??
+        (it as any).unitsPerPallet ??
+        (it as any).eaPerPalletQty ??
+        0,
+    );
+  };
+
+  const openManageModalFromCode = (code: string) => {
+    const it = items.find((x) => ((x as any).code ?? (x as any).itemCode ?? "") === code);
+    if (!it) {
+      alert(`해당 코드(${code})의 아이템을 items에서 못 찾았어. (저장/데이터 확인 필요)`);
+      return;
+    }
+    openManageModalFromItem(it);
   };
 
   /* ================= 제품관리(관리 버튼) 모달 ================= */
@@ -544,162 +582,25 @@ export function OrderDetail({
       </div>
 
       {/* ================= 제품관리 모달 ================= */}
-      {manageOpen && manageTarget && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4"
-          onClick={closeManageModal}
-        >
-          <div
-            className="w-[560px] max-w-[95vw] rounded-2xl bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3 border-b p-5">
-              <div>
-                <div className="text-base font-semibold">제품 관리</div>
-                <div className="mt-1 text-sm text-gray-700">
-                  {manageTarget.name} <span className="text-gray-400">({manageTarget.code})</span>
-                </div>
-
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-600">
-                  <span className="rounded-full bg-gray-100 px-2 py-0.5">
-                    주문: <b className="text-gray-800">{manageTarget.orderEaQty.toLocaleString()}</b> EA
-                  </span>
-                  <span className="rounded-full bg-gray-100 px-2 py-0.5">
-                    피킹재고: <b className="text-gray-800">{manageTarget.pickingStock.toLocaleString()}</b> EA
-                  </span>
-                  <span className="rounded-full bg-gray-100 px-2 py-0.5">
-                    토트재고: <b className="text-gray-800">{(toteStockMap[manageTarget.code] ?? manageTarget.toteStock).toLocaleString()}</b> EA
-                  </span>
-                  <span className={`rounded-full px-2 py-0.5 ${locationBadgeClass(locationMap[manageTarget.code] ?? manageTarget.location)}`}>
-                    {locationMap[manageTarget.code] ?? manageTarget.location}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50"
-                onClick={closeManageModal}
-              >
-                닫기
-              </button>
-            </div>
-
-            <div className="space-y-4 p-5">
-              {/* 1) 재고부족 마킹 */}
-              <section className="rounded-xl border p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-semibold">재고부족 마킹</div>
-                    <div className="mt-1 text-[11px] text-gray-500">
-                      “보충 필요”로 표시해두고, 나중에 재고관리에서 모아서 볼 때 쓰는 용도
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleToggleMark(manageTarget.code, manageTarget.name)}
-                    className={`inline-flex items-center justify-center rounded-md px-3 py-1 text-[12px] border transition font-medium ${
-                      isProductMarked(manageTarget.code)
-                        ? "border-blue-600 bg-blue-600 text-white hover:opacity-90"
-                        : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    {isProductMarked(manageTarget.code) ? "관리중" : "관리필요"}
-                  </button>
-                </div>
-              </section>
-
-              {/* 2) 현재 재고 수정 */}
-              <section className="rounded-xl border p-4">
-                <div className="text-sm font-semibold">현재 재고 수정 (토트)</div>
-                <div className="mt-1 text-[11px] text-gray-500">
-                  토트 재고가 실제와 다를 때 바로 정정해
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    className="w-44 rounded-md border px-3 py-2 text-sm"
-                    value={editToteEa}
-                    onChange={(e) => setEditToteEa(e.target.value)}
-                    placeholder="현재 토트 재고(EA)"
-                  />
-                  <button
-                    type="button"
-                    className="rounded-md bg-gray-900 px-3 py-2 text-sm text-white hover:opacity-90"
-                    onClick={handleApplyToteStock}
-                  >
-                    수정 적용
-                  </button>
-
-                  <div className="text-[11px] text-gray-500">
-                    현재 표시:{" "}
-                    <b className="text-gray-800">
-                      {(toteStockMap[manageTarget.code] ?? manageTarget.toteStock).toLocaleString()}
-                    </b>{" "}
-                    EA
-                  </div>
-                </div>
-              </section>
-
-              {/* 3) 1BOX 보충 호출 */}
-              <section className="rounded-xl border p-4">
-                <div className="text-sm font-semibold">1BOX 보충 호출 (파렛트 → 토트)</div>
-                <div className="mt-1 text-[11px] text-gray-500">
-                  토트 재고가 부족할 때, 파렛트에서 1박스만 빠르게 보충
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-[11px] text-gray-600">
-                    1BOX 내품:{" "}
-                    <b className="text-gray-800">
-                      {(manageTarget.boxEa ?? 0).toLocaleString()}
-                    </b>{" "}
-                    EA
-                    {!manageTarget.boxEa ? (
-                      <span className="ml-2 text-red-500">
-                        (boxEa 없음 — 데이터에 boxEa/eaPerBox 넣어줘)
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <button
-                    type="button"
-                    className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
-                    onClick={handleReplenish1Box}
-                    disabled={!manageTarget.boxEa || manageTarget.boxEa <= 0}
-                  >
-                    1BOX 보충 호출
-                  </button>
-                </div>
-
-                <div className="mt-2 text-[11px] text-gray-500">
-                  보충 후 예상 토트재고:{" "}
-                  <b className="text-gray-800">
-                    {(
-                      (toteStockMap[manageTarget.code] ?? manageTarget.toteStock) +
-                      (manageTarget.boxEa ?? 0)
-                    ).toLocaleString()}
-                  </b>{" "}
-                  EA
-                </div>
-              </section>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 border-t p-4">
-              <button
-                type="button"
-                className="rounded-md border px-4 py-2 text-sm hover:bg-gray-50"
-                onClick={closeManageModal}
-              >
-                닫기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ProductManageModal
+        open={manageOpen}
+        target={manageTarget}
+        displayToteEa={manageTarget ? (toteStockMap[manageTarget.code] ?? manageTarget.toteStock) : 0}
+        displayLocation={
+          manageTarget ? (locationMap[manageTarget.code] ?? manageTarget.location) : "창고"
+        }
+        isMarked={manageTarget ? isProductMarked(manageTarget.code) : false}
+        editToteEa={editToteEa}
+        onChangeEditToteEa={setEditToteEa}
+        onClose={closeManageModal}
+        onToggleMark={() => {
+          if (!manageTarget) return;
+          handleToggleMark(manageTarget.code, manageTarget.name);
+        }}
+        onApplyToteStock={handleApplyToteStock}
+        onReplenish1Box={handleReplenish1Box}
+        locationBadgeClass={locationBadgeClass}
+      />
 
       {/* ================= (신) 통합 모달 ================= */}
       <TransferFlowModal
@@ -712,6 +613,8 @@ export function OrderDetail({
         existingDestinationSlots={
           flowTarget?.code ? transferInfoMap[flowTarget.code]?.destinationSlots ?? [] : []
         }
+        eaPerBox={flowTarget?.code ? getEaPerBoxByCode(flowTarget.code) : 0}
+        eaPerPallet={flowTarget?.code ? getEaPerPalletByCode(flowTarget.code) : 0}
         remainingEaQty={(() => {
           const code = flowTarget?.code;
           if (!code) return 0;
@@ -764,6 +667,7 @@ export function OrderDetail({
             return { ...prev, [code]: draft };
           });
         }}
+        onOpenProductManage={(code) => openManageModalFromCode(code)}
         onConfirmDirectTransfer={(info: TransferInfo) => {
           const code = flowTarget?.code;
           if (!code) return;
@@ -787,16 +691,17 @@ export function OrderDetail({
                 prev[code] ??
                 ({
                   view: "WORK",
-                  calledPalletIds: [],
+                  calledResidualPalletIds: [],
+                  residualPalletMeta: {},
+                  residualBoxPickMap: {},
+                  boxDestSlot: null,
                   calledToteIds: [],
-                  calledPalletMeta: {},
-                  calledToteMeta: {},
-                  palletBoxPickMap: {},
+                  toteMeta: {},
                   toteEaPickMap: {},
-                  emptyPalletId: "",
-                  destSlot: null,
+                  eaDestSlot: null,
+                  consolidationPalletId: "",
                   packedLines: [],
-                } as ResidualDraft),
+                } as any as ResidualDraft),
             }));
           }
         }}
