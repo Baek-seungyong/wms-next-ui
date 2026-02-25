@@ -23,6 +23,7 @@ import { TransferFlowModal } from "./TransferFlowModal";
 import type { ResidualDraft, TransferFlowStep } from "./TransferFlowModal/types";
 import { ResidualTransferModal } from "./ResidualTransferModal";
 import { ProductManageModal } from "./ProductManageModal";
+import type { CarBatchTransferPayload } from "./CarBatchTransferModal/types";
 
 type Props = {
   order: Order | null;
@@ -30,6 +31,7 @@ type Props = {
   onChangeStatus?: (status: OrderStatus) => void;
   onComplete?: (newItems: OrderItem[]) => void;
   onSelectItemForPreview?: (item: OrderItem) => void;
+  onUpdateItems?: (orderId: string, nextItems: OrderItem[]) => void;
 };
 
 type LocationStatus = "창고" | "입고중" | "작업중" | "출고중";
@@ -71,6 +73,7 @@ export function OrderDetail({
   onChangeStatus,
   onComplete,
   onSelectItemForPreview,
+  onUpdateItems,
 }: Props): ReactElement | null {
   /* ================= 재고/경고 ================= */
   const hasLowStock = useMemo(() => items.some((i) => (i as any).lowStock), [items]);
@@ -88,6 +91,19 @@ export function OrderDetail({
   const [transferInfoMap, setTransferInfoMap] = useState<Record<string, TransferInfo | undefined>>(
     {},
   );
+
+  useEffect(() => {
+    if (!order) return;
+
+    const next: Record<string, TransferInfo | undefined> = {};
+    for (const it of items) {
+      const code = (it as any).code ?? (it as any).itemCode ?? "";
+      const dt = (it as any).directTransfer as TransferInfo | undefined;
+      if (code && dt) next[code] = dt;
+    }
+    setTransferInfoMap(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id]);
 
   const [residualInfoMap, setResidualInfoMap] = useState<
     Record<string, ResidualTransferInfo | undefined>
@@ -146,6 +162,17 @@ export function OrderDetail({
     setFlowTarget({ code, name, orderEaQty });
     setFlowOpen(true);
   };
+
+  const applyCarBatchTransferToItems = (payload: CarBatchTransferPayload) => {
+  if (!order?.id || !onUpdateItems) return;
+
+  const nextItems = items.map((it) => ({
+    ...(it as any),
+    carBatchTransfer: payload,
+  })) as any;
+
+  onUpdateItems(order.id, nextItems);
+};
 
   /** ================= 단위 정보(계산용) =================
    * - TransferFlowModal 상단의 '파렛트/박스/낱개' 자동 계산용
@@ -264,7 +291,7 @@ export function OrderDetail({
     setLocationMap((prev) => ({ ...prev, [manageTarget.code]: "입고중" }));
 
     alert(
-      `파렛트에서 1BOX 보충 호출!\n- 상품: ${manageTarget.name}\n- +${boxEa.toLocaleString()} EA\n- 토트 재고: ${next.toLocaleString()} EA`,
+      `파렛트에서 1BOX 보충\n- 상품: ${manageTarget.name}\n- +${boxEa.toLocaleString()} EA\n- 토트 재고: ${next.toLocaleString()} EA`,
     );
   };
 
@@ -600,6 +627,7 @@ export function OrderDetail({
         onApplyToteStock={handleApplyToteStock}
         onReplenish1Box={handleReplenish1Box}
         locationBadgeClass={locationBadgeClass}
+        onCallReplenishPallet={() => alert(`${manageTarget.name} 파렛트를 호출합니다.`)}
       />
 
       {/* ================= (신) 통합 모달 ================= */}
@@ -675,22 +703,51 @@ export function OrderDetail({
           const merged: TransferInfo = {
             ...info,
             orderEaQty: flowTarget?.orderEaQty ?? 0,
-            remainingEaQty: (flowTarget?.orderEaQty ?? 0) - (info.transferEaQty ?? 0),
+            remainingEaQty:
+              (flowTarget?.orderEaQty ?? 0) - (info.transferEaQty ?? 0),
           };
 
+          // 1️⃣ 기존 로컬 상태 반영
           setTransferInfoMap((prev) => ({ ...prev, [code]: merged }));
           setLocationMap((prev) => ({ ...prev, [code]: "출고중" }));
 
-          // 지정이송 후 잔량 남으면 잔량 준비 단계로 + draft 기본값 확보
-          const remainEa = Math.max(0, (flowTarget?.orderEaQty ?? 0) - (info.transferEaQty ?? 0));
+          // 2️⃣ ✅ 부모(itemsByOrderId)에도 저장 (여기 안에 들어가야 함)
+          if (order?.id && onUpdateItems) {
+            const orderId = order.id;
+
+            const nextItems = items.map((it) => {
+              const itCode =
+                (it as any).code ?? (it as any).itemCode ?? "";
+
+              if (itCode !== code) return it;
+
+              return {
+                ...(it as any),
+                directTransfer: merged,
+              } as any;
+            });
+
+            onUpdateItems(orderId, nextItems);
+          }
+
+          // 3️⃣ 지정이송 후 잔량 처리
+          const remainEa = Math.max(
+            0,
+            (flowTarget?.orderEaQty ?? 0) -
+              (info.transferEaQty ?? 0),
+          );
+
           if (remainEa > 0) {
-            setResidualStepMap((prev) => ({ ...prev, [code]: "PREP_CALLING" }));
+            setResidualStepMap((prev) => ({
+              ...prev,
+              [code]: "PREP_CALLING",
+            }));
+
             setResidualDraftMap((prev) => ({
               ...prev,
               [code]:
                 prev[code] ??
                 ({
-                  view: "WORK",
                   calledResidualPalletIds: [],
                   residualPalletMeta: {},
                   residualBoxPickMap: {},
@@ -699,9 +756,10 @@ export function OrderDetail({
                   toteMeta: {},
                   toteEaPickMap: {},
                   eaDestSlot: null,
-                  consolidationPalletId: "",
-                  packedLines: [],
-                } as any as ResidualDraft),
+                  consolidationPalletId: null,
+                  consolidationDestSlot: null,
+                  consolidationDestMode: "AUTO",
+                } as ResidualDraft),
             }));
           }
         }}

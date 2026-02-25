@@ -1,4 +1,3 @@
-// components/TransferFlowModal/Step2ResidualPrep.tsx
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
@@ -82,31 +81,34 @@ export function Step2ResidualPrep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const planText = useMemo(() => {
-    const p = planPalletQty == null ? "-" : `${planPalletQty}P`;
-    const b = planBoxQty == null ? "-" : `${planBoxQty}BOX`;
-    const e = planEaQty == null ? "-" : `${planEaQty}EA`;
-    return `${p} · ${b} · ${e}`;
-  }, [planPalletQty, planBoxQty, planEaQty]);
+  // ✅ draft에 planned / called 를 같이 저장 (types.ts에 아직 없으면 any로 접근)
+  const plannedIds: string[] = (draft as any).plannedResidualPalletIds ?? [];
+  const calledIds: string[] = (draft as any).calledResidualPalletIds ?? [];
 
-  const selectedIds = draft.calledResidualPalletIds ?? [];
-  const pickedTotalBox = Object.values(draft.residualBoxPickMap || {}).reduce(
-    (a, b) => a + Number(b || 0),
-    0,
-  );
+  const plannedTotalBox = plannedIds.reduce((sum, id) => {
+    return sum + Number(draft.residualBoxPickMap?.[id] ?? 0);
+  }, 0);
+
+  const calledTotalBox = calledIds.reduce((sum, id) => {
+    return sum + Number(draft.residualBoxPickMap?.[id] ?? 0);
+  }, 0);
 
   const handleAutoCall = () => {
     // ✅ 규칙: 목표 박스수량보다 많이 얹힌 파렛트 중 “가장 오래된(=목록 앞)” 하나 선택
     const row = rows.find((r) => r.boxQty >= targetBoxQty && targetBoxQty > 0) ?? rows[0];
     if (!row) return;
 
-    const next = { ...draft };
+    const next: any = { ...draft };
 
-    next.calledResidualPalletIds = [row.id];
+    // ✅ 예정만 세팅
+    next.plannedResidualPalletIds = [row.id];
+
     next.residualPalletMeta = {
       ...(next.residualPalletMeta || {}),
       [row.id]: { boxQty: row.boxQty, eaPerBox: row.eaPerBox },
     };
+
+    // 기본 입력값: 목표 박스 수량
     next.residualBoxPickMap = {
       ...(next.residualBoxPickMap || {}),
       [row.id]: Math.max(0, targetBoxQty || 0),
@@ -116,11 +118,11 @@ export function Step2ResidualPrep({
   };
 
   const handleManualPick = (row: ResidualPalletRow) => {
-    const next = { ...draft };
+    const next: any = { ...draft };
 
-    const cur = new Set(next.calledResidualPalletIds || []);
+    const cur = new Set(next.plannedResidualPalletIds || []);
     cur.add(row.id);
-    next.calledResidualPalletIds = Array.from(cur);
+    next.plannedResidualPalletIds = Array.from(cur);
 
     next.residualPalletMeta = {
       ...(next.residualPalletMeta || {}),
@@ -139,11 +141,28 @@ export function Step2ResidualPrep({
     onChangeDraft(next);
   };
 
-  const removeSelected = (id: string) => {
-    const next = { ...draft };
-    next.calledResidualPalletIds = (next.calledResidualPalletIds || []).filter((x) => x !== id);
+  const removePlanned = (id: string) => {
+    const next: any = { ...draft };
+    next.plannedResidualPalletIds = (next.plannedResidualPalletIds || []).filter((x: string) => x !== id);
+
     const { [id]: _, ...rest } = next.residualBoxPickMap || {};
     next.residualBoxPickMap = rest;
+
+    onChangeDraft(next);
+  };
+
+  const confirmCall = () => {
+    if (plannedIds.length === 0) return;
+
+    const next: any = { ...draft };
+
+    // ✅ 예정 → 호출됨(확정)으로 이동 (중복 방지)
+    const merged = new Set<string>([...(next.calledResidualPalletIds || []), ...plannedIds]);
+    next.calledResidualPalletIds = Array.from(merged);
+
+    // ✅ 예정 비움
+    next.plannedResidualPalletIds = [];
+
     onChangeDraft(next);
   };
 
@@ -153,7 +172,8 @@ export function Step2ResidualPrep({
         <div>
           <div className="text-[13px] font-semibold">파렛트 호출(박스 단위)</div>
           <div className="mt-1 text-[12px] text-gray-600">
-            목표 박스수량: <span className="font-semibold">{Number(targetBoxQty).toLocaleString()}</span> BOX
+            목표 박스수량:{" "}
+            <span className="font-semibold">{Number(targetBoxQty).toLocaleString()}</span> BOX
           </div>
         </div>
 
@@ -163,7 +183,7 @@ export function Step2ResidualPrep({
             onClick={handleAutoCall}
             className="rounded-full bg-gray-900 px-3 py-1 text-[12px] font-semibold text-white hover:opacity-90"
           >
-          파렛트 호출
+            자동 적용
           </button>
           <button
             type="button"
@@ -205,22 +225,33 @@ export function Step2ResidualPrep({
         </div>
       ) : null}
 
-      {/* 선택된 잔량 파렛트 + 박스 수량 입력 */}
+      {/* ✅ 예정 파렛트(확정 전) */}
       <div className="rounded-xl border bg-white p-3">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="text-[12px] font-semibold text-gray-700">
-            호출된 파렛트 ({selectedIds.length})
+            예정 파렛트 ({plannedIds.length})
           </div>
-          <div className="text-[11px] text-gray-500">
-            입력 합계: <b className="text-gray-900">{pickedTotalBox.toLocaleString()}</b> BOX
+
+          <div className="flex items-center gap-3">
+            <div className="text-[11px] text-gray-500">
+              입력 합계: <b className="text-gray-900">{plannedTotalBox.toLocaleString()}</b> BOX
+            </div>
+            <button
+              type="button"
+              disabled={plannedIds.length === 0}
+              onClick={confirmCall}
+              className="rounded-full bg-emerald-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+            >
+              확인
+            </button>
           </div>
         </div>
 
-        {selectedIds.length === 0 ? (
+        {plannedIds.length === 0 ? (
           <div className="text-[12px] text-gray-500"></div>
         ) : (
           <div className="space-y-2">
-            {selectedIds.map((id) => {
+            {plannedIds.map((id) => {
               const meta = draft.residualPalletMeta?.[id];
               const maxBox = Number(meta?.boxQty ?? 0);
               const val = Number(draft.residualBoxPickMap?.[id] ?? 0);
@@ -255,11 +286,58 @@ export function Step2ResidualPrep({
                     <span className="text-[12px] text-gray-600">BOX</span>
                     <button
                       type="button"
-                      onClick={() => removeSelected(id)}
+                      onClick={() => removePlanned(id)}
                       className="rounded-md border px-2 py-1 text-[12px] text-gray-600 hover:bg-gray-50"
                     >
                       제거
                     </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ✅ 호출된 파렛트(확정 후) - 락 */}
+      <div className="rounded-xl border bg-gray-50 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-[12px] font-semibold text-gray-700">
+            호출된 파렛트 ({calledIds.length})
+          </div>
+          <div className="text-[11px] text-gray-500">
+            입력 합계: <b className="text-gray-900">{calledTotalBox.toLocaleString()}</b> BOX
+          </div>
+        </div>
+
+        {calledIds.length === 0 ? (
+          <div className="text-[12px] text-gray-500"></div>
+        ) : (
+          <div className="space-y-2">
+            {calledIds.map((id) => {
+              const meta = draft.residualPalletMeta?.[id];
+              const maxBox = Number(meta?.boxQty ?? 0);
+              const val = Number(draft.residualBoxPickMap?.[id] ?? 0);
+
+              return (
+                <div
+                  key={id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2"
+                >
+                  <div>
+                    <div className="text-[12px] font-semibold text-gray-900">{id}</div>
+                    <div className="mt-0.5 text-[11px] text-gray-500">
+                      잔량 {maxBox.toLocaleString()} BOX
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="text-[12px] text-gray-700">
+                      <b className="tabular-nums">{val.toLocaleString()}</b> BOX
+                    </div>
+                    <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] text-gray-600">
+                      호출 확정
+                    </span>
                   </div>
                 </div>
               );

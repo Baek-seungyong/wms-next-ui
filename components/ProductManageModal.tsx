@@ -32,7 +32,12 @@ type Props = {
   onClose: () => void;
   onToggleMark: () => void;
   onApplyToteStock: () => void;
+
+  /** ✅ 기존 */
   onReplenish1Box: () => void;
+
+  /** ✅ 추가: 토트 보충용 파렛트 호출 버튼 */
+  onCallReplenishPallet: () => void;
 
   // 배지 class 계산은 OrderDetail에서 쓰던거 그대로 재사용
   locationBadgeClass: (loc: LocationStatus) => string;
@@ -50,9 +55,12 @@ export function ProductManageModal({
   onToggleMark,
   onApplyToteStock,
   onReplenish1Box,
+  onCallReplenishPallet,
   locationBadgeClass,
 }: Props) {
   if (!open || !target) return null;
+
+  const hasBoxEa = !!target.boxEa && target.boxEa > 0;
 
   return (
     <div
@@ -112,11 +120,11 @@ export function ProductManageModal({
                   onClick={onToggleMark}
                   className={`inline-flex items-center justify-center rounded-md px-3 py-1 text-[12px] border transition font-medium ${
                     isMarked
-                      ? "border-blue-600 bg-blue-600 text-white hover:opacity-90"
-                      : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                      ? "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                      : "border-blue-600 bg-blue-600 text-white hover:opacity-90"
                   }`}
                 >
-                  {isMarked ? "관리중" : "관리필요"}
+                  {isMarked ? "취소" : "재고부족"}
                 </button>
               </div>
             </section>
@@ -154,19 +162,31 @@ export function ProductManageModal({
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-[11px] text-gray-600">
                   1BOX 내품: <b className="text-gray-800">{(target.boxEa ?? 0).toLocaleString()}</b> EA
-                  {!target.boxEa ? (
+                  {!hasBoxEa ? (
                     <span className="ml-2 text-red-500">(boxEa 없음 — 데이터에 boxEa/eaPerBox 넣어줘)</span>
                   ) : null}
                 </div>
 
-                <button
-                  type="button"
-                  className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
-                  onClick={onReplenish1Box}
-                  disabled={!target.boxEa || target.boxEa <= 0}
-                >
-                  1BOX 보충 호출
-                </button>
+                {/* ✅ 버튼 2개: (왼쪽) 파렛트 호출 / (오른쪽) 1BOX 보충 호출 */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md bg-gray-900 px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
+                    onClick={onCallReplenishPallet}
+                    disabled={!hasBoxEa}
+                  >
+                    파렛트 호출
+                  </button>
+
+                  <button
+                    type="button"
+                    className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
+                    onClick={onReplenish1Box}
+                    disabled={!hasBoxEa}
+                  >
+                    1BOX 보충
+                  </button>
+                </div>
               </div>
 
               <div className="mt-2 text-[11px] text-gray-500">
@@ -189,7 +209,6 @@ export function ProductManageModal({
           {/* 우측 이미지 패널 */}
           <div className="hidden md:flex border-l bg-gray-50 p-6">
             <div className="flex w-full flex-col items-center justify-center rounded-2xl bg-white p-4 shadow-sm">
-
               <div className="relative mt-3 h-[220px] w-full">
                 <Image
                   src="/images/warehouse/totebox.png"

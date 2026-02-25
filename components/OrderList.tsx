@@ -10,8 +10,10 @@ type Props = {
   activeOrderId: string;
   onSelectOrder: (id: string) => void;
 
-  // ✅ 새로고침 버튼 눌렀을 때 부모에서 처리
   onRefresh?: () => void;
+
+  // ✅ 차량출고: 1단계 일괄 지정이송 모달 열기
+  onOpenCarBatch?: () => void;
 };
 
 export function OrderList({
@@ -19,22 +21,36 @@ export function OrderList({
   activeOrderId,
   onSelectOrder,
   onRefresh,
+  onOpenCarBatch,
 }: Props): ReactElement {
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
       <div className="mb-3 flex items-center justify-between">
         <div className="text-xs text-gray-500">주문서 목록</div>
 
-        {/* ✅ 예시 데이터 {n}건 제거 → 새로고침 버튼으로 교체 */}
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="rounded-full bg-blue-600 px-4 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-          disabled={!onRefresh}
-          title={!onRefresh ? "onRefresh 콜백이 연결되지 않았습니다." : "새로고침"}
-        >
-          새로고침
-        </button>
+        {/* ✅ 버튼 영역 */}
+        <div className="flex items-center gap-2">
+          {onOpenCarBatch && (
+            <button
+              type="button"
+              onClick={onOpenCarBatch}
+              className="rounded-full bg-emerald-600 px-4 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+              title="차량출고 주문 1단계(파렛트) 일괄 지정이송"
+            >
+              파렛트 일괄이송
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="rounded-full bg-blue-600 px-4 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            disabled={!onRefresh}
+            title={!onRefresh ? "onRefresh 콜백이 연결되지 않았습니다." : "새로고침"}
+          >
+            새로고침
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto rounded-xl border bg-gray-50">
@@ -54,19 +70,11 @@ export function OrderList({
               return (
                 <tr
                   key={o.id}
-                  className={`cursor-pointer ${
-                    active ? "bg-blue-50" : "bg-white"
-                  } hover:bg-blue-50`}
+                  className={`cursor-pointer ${active ? "bg-blue-50" : "bg-white"} hover:bg-blue-50`}
                   onClick={() => onSelectOrder(o.id)}
                 >
-                  <td className="border-t px-3 py-2 font-mono text-[12px]">
-                    {o.id}
-                  </td>
-                  <td className="border-t px-3 py-2 text-[12px]">
-                    {(o as any).customer}
-                  </td>
-
-                  {/* ✅ 상태 뱃지(보류 버튼 없음) */}
+                  <td className="border-t px-3 py-2 font-mono text-[12px]">{o.id}</td>
+                  <td className="border-t px-3 py-2 text-[12px]">{(o as any).customer}</td>
                   <td className="border-t px-3 py-2 text-center">
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] ${statusBadgeClass(
@@ -82,10 +90,7 @@ export function OrderList({
 
             {orders.length === 0 && (
               <tr>
-                <td
-                  colSpan={3}
-                  className="border-t px-3 py-4 text-center text-[12px] text-gray-400"
-                >
+                <td colSpan={3} className="border-t px-3 py-4 text-center text-[12px] text-gray-400">
                   표시할 주문이 없습니다.
                 </td>
               </tr>

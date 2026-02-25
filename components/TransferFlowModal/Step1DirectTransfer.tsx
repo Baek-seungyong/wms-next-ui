@@ -62,6 +62,14 @@ export function Step1DirectTransfer({
 }: Props) {
   const [manualOpen, setManualOpen] = useState(false);
 
+  /**
+   * ✅ 예정 상태(확인 전)
+   * - 자동적용/수정(상세)에서 값이 만들어지면 draft에 저장
+   * - 확인 버튼을 누르면 draft → 확정(existingTransfer로 전환되는 흐름)
+   */
+  const [draftTransfer, setDraftTransfer] = useState<TransferInfo | null>(null);
+  const [draftMode, setDraftMode] = useState<"auto" | "manual" | null>(null);
+
   // 기본값: 계획 파렛트 수량이 있으면 거기로 세팅
   useEffect(() => {
     if (directPalletQty > 0) return;
@@ -70,6 +78,20 @@ export function Step1DirectTransfer({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planPalletQty]);
+
+  // ✅ 입력 수량이 바뀌면, 이전 "예정"은 무효니까 draft 제거
+  useEffect(() => {
+    if (existingTransfer) return; // 이미 확정이면 draft 의미 없음
+    setDraftTransfer(null);
+    setDraftMode(null);
+  }, [directPalletQty, existingTransfer]);
+
+  // ✅ 확정이 들어오면 draft도 정리
+  useEffect(() => {
+    if (!existingTransfer) return;
+    setDraftTransfer(null);
+    setDraftMode(null);
+  }, [existingTransfer]);
 
   const autoTransferEaQty = useMemo(() => {
     const unit = Number(eaPerPallet ?? 0);
@@ -94,52 +116,93 @@ export function Step1DirectTransfer({
   }, [productCode, directPalletQty]);
 
   // ✅ 자동 목적지
-  const currentDestSlots = useMemo(() => autoAssignSlots(currentPalletIds.length), [currentPalletIds]);
+  const currentDestSlots = useMemo(
+    () => autoAssignSlots(currentPalletIds.length),
+    [currentPalletIds],
+  );
 
+  // ✅ 표시용: 확정/예정 요약 (처음은 비어있게)
   const summary = useMemo(() => {
-    const pCount = (existingTransfer as any)?.palletIds?.length ?? 0;
-    const ea = Number((existingTransfer as any)?.transferEaQty ?? 0);
-    const dest =
-      ((existingTransfer as any)?.destinationSlots as string[] | undefined)?.join(", ") ??
-      existingDestinationSlots?.join(", ") ??
-      "-";
+    // 1) 확정 상태
+    if (existingTransfer) {
+      const pCount = (existingTransfer as any)?.palletIds?.length ?? 0;
+      const ea = Number((existingTransfer as any)?.transferEaQty ?? 0);
+      const dest =
+        ((existingTransfer as any)?.destinationSlots as string[] | undefined)?.join(", ") ??
+        existingDestinationSlots?.join(", ") ??
+        "-";
 
-    if (!existingTransfer) {
-      if (!canAutoApply) return "팔레트당 EA(단위)가 없어서 자동 계산 불가";
-      return `자동 배정 예정: ${directPalletQty}P · ${autoTransferEaQty.toLocaleString()} EA · 목적지 ${currentDestSlots.join(
-        ", ",
-      )}`;
+      return `확정 파렛트: ${pCount}P · ${ea.toLocaleString()} EA · 목적지 ${dest}`;
     }
 
-    return `확정: 파렛트 ${pCount}개 · ${ea.toLocaleString()} EA · 목적지 ${dest}`;
-  }, [
-    existingTransfer,
-    existingDestinationSlots,
-    canAutoApply,
-    directPalletQty,
-    autoTransferEaQty,
-    currentDestSlots,
-  ]);
+    // 2) 예정 상태
+    if (draftTransfer) {
+      const pCount = (draftTransfer as any)?.palletIds?.length ?? 0;
+      const ea = Number((draftTransfer as any)?.transferEaQty ?? 0);
+      const dest =
+        ((draftTransfer as any)?.destinationSlots as string[] | undefined)?.join(", ") ?? "-";
+
+      return `예정 파렛트: ${pCount}P · ${ea.toLocaleString()} EA · 목적지 ${dest}`;
+    }
+
+    // 3) 초기(비어있게)
+    return `예정 파렛트:`;
+  }, [existingTransfer, existingDestinationSlots, draftTransfer]);
+
+  // ✅ 확인 가능 조건: "확정이 아직 없고" + "예정이 있음"
+  const canConfirm = !existingTransfer && !!draftTransfer;
 
   return (
     <div className="space-y-3">
       {/* ✅ 헤더(좌측 텍스트 / 우측 버튼) */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="space-y-0.5">
-          <div className="text-[13px] font-semibold">지정이송(풀파렛트)</div>
+          <div className="text-[13px] font-semibold">지정 이송(파렛트 단위)</div>
           <div className="text-[12px] text-gray-600">
+            계획: <span className="font-semibold text-gray-900">{planText}</span>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setManualOpen(true)}
-          className="rounded-full border bg-white px-3 py-1 text-[12px] text-gray-700 hover:bg-gray-50"
-        >
-          수정(상세)
-        </button>
+        {/* ✅ 자동적용을 수정(상세) 왼쪽으로 */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={!canAutoApply || !!existingTransfer}
+            onClick={() => {
+              // ✅ 자동적용 = "예정"만 만든다
+              if (!canAutoApply) return;
+
+              const info: TransferInfo = {
+                ...(existingTransfer ?? ({} as any)),
+                status: "이송중" as any,
+                fromLocation: "2,3층 파렛트존" as any,
+                palletIds: currentPalletIds as any,
+                destinationSlots: currentDestSlots as any,
+                orderEaQty: Number(orderEaQty || 0) as any,
+                transferEaQty: autoTransferEaQty as any,
+                remainingEaQty: Number(orderEaQty || 0) - autoTransferEaQty,
+              };
+
+              setDraftTransfer(info);
+              setDraftMode("auto");
+            }}
+            className="rounded-full bg-blue-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+          >
+            자동 적용
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setManualOpen(true)}
+            disabled={!!existingTransfer}
+            className="rounded-full border bg-white px-3 py-1 text-[12px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          >
+            수정(상세)
+          </button>
+        </div>
       </div>
 
+      {/* ✅ 요약 */}
       <div className="rounded-xl border bg-gray-50 px-3 py-2 text-[12px] text-gray-700">
         {summary}
       </div>
@@ -152,6 +215,7 @@ export function Step1DirectTransfer({
           className="w-28 rounded-md border px-2 py-1 text-[12px]"
           value={directPalletQty}
           onChange={(e) => onChangeDirectPalletQty(Number(e.target.value || 0))}
+          disabled={!!existingTransfer}
         />
 
         <div className="text-[12px] text-gray-500">
@@ -164,26 +228,25 @@ export function Step1DirectTransfer({
           )}
         </div>
 
+        {/* ✅ 기존 자동적용 위치에 "확인" 버튼 */}
         <button
           type="button"
-          disabled={!canAutoApply}
+          disabled={!canConfirm}
           onClick={() => {
-            const info: TransferInfo = {
-              ...(existingTransfer ?? ({} as any)),
-              status: "이송중" as any,
-              fromLocation: "2,3층 파렛트존" as any,
-              palletIds: currentPalletIds as any,
-              destinationSlots: currentDestSlots as any,
-              orderEaQty: Number(orderEaQty || 0) as any,
-              transferEaQty: autoTransferEaQty as any,
-              remainingEaQty: Number(orderEaQty || 0) - autoTransferEaQty,
-            };
+            if (!draftTransfer) return;
 
-            onApplyAutoDirect(info);
+            // ✅ 예정 → 확정
+            // 자동에서 만든 예정이면 onApplyAutoDirect
+            // 수동(상세)에서 만든 예정이면 onConfirmManualDirect
+            if (draftMode === "manual") {
+              onConfirmManualDirect(draftTransfer);
+            } else {
+              onApplyAutoDirect(draftTransfer);
+            }
           }}
-          className="rounded-full bg-blue-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+          className="rounded-full bg-emerald-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
         >
-          자동 적용
+          확인
         </button>
       </div>
 
@@ -196,7 +259,9 @@ export function Step1DirectTransfer({
         orderEaQty={orderEaQty}
         existingTransfer={existingTransfer}
         existingDestinationSlots={existingDestinationSlots}
-        fixedPalletIds={(existingTransfer?.palletIds?.length ? existingTransfer.palletIds : currentPalletIds) as any}
+        fixedPalletIds={
+          (existingTransfer?.palletIds?.length ? existingTransfer.palletIds : currentPalletIds) as any
+        }
         initialDestinationSlots={
           (existingTransfer?.destinationSlots?.length
             ? existingTransfer.destinationSlots
@@ -204,7 +269,9 @@ export function Step1DirectTransfer({
         }
         forceEdit
         onConfirmTransfer={(info) => {
-          onConfirmManualDirect(info);
+          // ✅ 수정(상세)도 즉시 확정이 아니라 "예정"만 만든다
+          setDraftTransfer(info);
+          setDraftMode("manual");
           setManualOpen(false);
         }}
       />

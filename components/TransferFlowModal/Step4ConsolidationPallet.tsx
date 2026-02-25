@@ -104,32 +104,14 @@ export function Step4ConsolidationPallet({
 
   const occupiedSet = useMemo(() => new Set(occupiedOutboundSlots ?? []), [occupiedOutboundSlots]);
 
-  // ✅ 합포 대상 있고, 아직 목적지 없으면 자동 배정
-  useEffect(() => {
-    if (!hasAnyConsolidation) return;
-    if (destSlot) return;
+  const palletId = (draft as any).consolidationPalletId ?? "";
+  const hasPalletId = String(palletId).trim().length > 0;
 
-    const auto = pickAutoSlot({
-      baseOutboundSlots: baseOutboundSlots ?? [],
-      allOutboundSlots: allOutboundSlots ?? [],
-      occupiedOutboundSlots: occupiedOutboundSlots ?? [],
-    });
-
-    onChangeDraft({
-      ...(draft as any),
-      consolidationDestMode: "AUTO",
-      consolidationDestSlot: auto,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    hasAnyConsolidation,
-    destSlot,
-    baseOutboundSlots.join("|"),
-    allOutboundSlots.join("|"),
-    occupiedOutboundSlots.join("|"),
-  ]);
+  // ✅ 합포 대상 있고, 아직 목적지 없으면 자동 배정 (단, QR 입력된 상태일 때만)
 
   const applyAuto = () => {
+    if (!hasPalletId) return;
+
     const auto = pickAutoSlot({
       baseOutboundSlots: baseOutboundSlots ?? [],
       allOutboundSlots: allOutboundSlots ?? [],
@@ -144,10 +126,32 @@ export function Step4ConsolidationPallet({
   };
 
   const toggleSlot = (slot: string) => {
+    if (!hasPalletId) return;
     if (occupiedSet.has(slot)) return;
 
     // ✅ 같은 슬롯 다시 누르면 해제
     const next = destSlot === slot ? null : slot;
+
+    const applyAuto = () => {
+    if (!hasPalletId) return;
+
+    const auto = pickAutoSlot({
+      baseOutboundSlots: baseOutboundSlots ?? [],
+      allOutboundSlots: allOutboundSlots ?? [],
+      occupiedOutboundSlots: occupiedOutboundSlots ?? [],
+    });
+
+    if (!auto) {
+      alert("자동 배정 가능한 슬롯이 없어.");
+      return;
+    }
+
+    onChangeDraft({
+      ...(draft as any),
+      consolidationDestMode: "AUTO",
+      consolidationDestSlot: auto,
+    });
+  };
 
     onChangeDraft({
       ...(draft as any),
@@ -164,24 +168,7 @@ export function Step4ConsolidationPallet({
           <div className="mt-1 text-[12px] text-gray-600">계획: {planText}</div>
         </div>
 
-        {hasAnyConsolidation && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={applyAuto}
-              className="rounded-lg border bg-white px-3 py-1.5 text-[12px] hover:bg-gray-50"
-            >
-              자동적용
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditOpen((v) => !v)}
-              className="rounded-lg border bg-white px-3 py-1.5 text-[12px] hover:bg-gray-50"
-            >
-              수정(상세)
-            </button>
-          </div>
-        )}
+        {/* ✅ 여기(상단 우측) 버튼 제거: 목적지 카드 헤더로 이동 */}
       </div>
 
       {!hasAnyConsolidation ? (
@@ -195,30 +182,55 @@ export function Step4ConsolidationPallet({
             <div className="text-[12px] text-gray-600">빈 파렛트 QR</div>
             <input
               className="w-64 rounded-md border px-3 py-2 text-[12px]"
-              value={draft.consolidationPalletId || ""}
-              onChange={(e) => onChangeDraft({ ...draft, consolidationPalletId: e.target.value })}
+              value={palletId}
+              onChange={(e) =>
+                onChangeDraft({ ...(draft as any), consolidationPalletId: e.target.value })
+              }
               placeholder="예: PLT-1234"
             />
           </div>
 
           <div className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-[12px] text-gray-700">
-            등록된 합포 파렛트:{" "}
-            <b>{draft.consolidationPalletId?.trim() ? draft.consolidationPalletId : "-"}</b>
+            등록된 합포 파렛트: <b>{hasPalletId ? palletId : "-"}</b>
           </div>
 
           {/* 목적지 요약 */}
           <div className="mt-4 rounded-xl border p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-[12px] font-semibold">합포 파렛트 목적지(풀파렛트 옆)</div>
+
+              {/* ✅ 버튼을 여기로 이동 */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={applyAuto}
+                  disabled={!hasPalletId}
+                  className="rounded-lg border bg-white px-3 py-1.5 text-[12px] hover:bg-gray-50 disabled:opacity-40"
+                >
+                  자동적용
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditOpen((v) => !v)}
+                  disabled={!hasPalletId}
+                  className="rounded-lg border bg-white px-3 py-1.5 text-[12px] hover:bg-gray-50 disabled:opacity-40"
+                >
+                  수정(상세)
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <div className="text-[12px] text-gray-700">
                 현재: <b>{destSlot ?? "-"}</b>{" "}
                 <span className="ml-2 text-gray-500">(모드: {destMode})</span>
               </div>
-            </div>
 
-            <div className="mt-2 text-[12px] text-gray-600">
-              - 자동적용: 1STEP 풀파렛트 목적지 옆으로 자동 배정<br />
-              - 수정(상세): 슬롯을 눌러 선택 / 같은 슬롯 다시 누르면 해제
+              {!hasPalletId ? (
+                <div className="text-[11px] text-amber-600">
+                  빈 파렛트를 입력하세요
+                </div>
+              ) : null}
             </div>
 
             {/* 상세 수정 UI */}
@@ -234,12 +246,23 @@ export function Step4ConsolidationPallet({
                         key={slot}
                         type="button"
                         onClick={() => toggleSlot(slot)}
+                        disabled={!hasPalletId || isLocked}
                         className={[
                           "rounded-lg border px-2 py-2 text-[12px]",
-                          isLocked ? "bg-gray-100 text-gray-400" : "bg-white hover:bg-gray-50",
+                          !hasPalletId
+                            ? "bg-gray-100 text-gray-400"
+                            : isLocked
+                              ? "bg-gray-100 text-gray-400"
+                              : "bg-white hover:bg-gray-50",
                           isSelected ? "border-black bg-black text-white hover:bg-black" : "",
                         ].join(" ")}
-                        title={isLocked ? "점유중(선택불가)" : "선택"}
+                        title={
+                          !hasPalletId
+                            ? "빈 파렛트 QR 입력 후 선택 가능"
+                            : isLocked
+                              ? "점유중(선택불가)"
+                              : "선택"
+                        }
                       >
                         {slot}
                       </button>

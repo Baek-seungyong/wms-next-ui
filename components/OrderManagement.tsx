@@ -7,6 +7,8 @@ import { OrderList } from "./OrderList";
 import { OrderDetail } from "./OrderDetail";
 import { RobotProductCallModal } from "./RobotProductCallModal";
 
+import { CarBatchTransferModal } from "./CarBatchTransferModal";
+
 // 🔹 상품별 이미지 매핑 (실제 파일명에 맞게 수정해서 사용)
 const PRODUCT_IMAGE_MAP: Record<string, string> = {
   "P-001": "/images/products/P-001.png",
@@ -31,20 +33,119 @@ export const baseOrders: Order[] = [
   { id: "ORD-251116-03", customer: "H연구소", dueDate: "2025-11-19", status: "출고중", zone: "차량출고" },
 ];
 
-// 기본 품목 데이터
-const baseItems: OrderItem[] = [
-  { code: "P-001", name: "PET 500ml 투명", orderQty: 3000, stockQty: 150 },
-  { code: "P-013", name: "PET 1L 반투명", orderQty: 50, stockQty: 20, lowStock: true },
-  { code: "C-201", name: "캡 28파이 화이트", orderQty: 100, stockQty: 500 },
-  { code: "L-009", name: "라벨 500ml 화이트", orderQty: 100, stockQty: 80 },
+// ✅ 제품 카탈로그 (주문마다 여기서 랜덤으로 뽑아씀)
+type ProductCatalogItem = {
+  code: string;
+  name: string;
+  boxEa: number;
+  palletEa?: number;
+};
+
+const PRODUCT_CATALOG: ProductCatalogItem[] = [
+  { code: "P-001", name: "PET 500ml 투명", boxEa: 115, palletEa: 1150 },
+  { code: "P-002", name: "PET 500ml 갈색", boxEa: 120, palletEa: 1200 },
+  { code: "P-003", name: "PET 300ml 투명", boxEa: 150, palletEa: 1500 },
+  { code: "P-013", name: "PET 1L 반투명", boxEa: 60, palletEa: 600 },
+  { code: "P-021", name: "PET 2L 투명", boxEa: 30, palletEa: 300 },
+
+  { code: "C-201", name: "캡 28파이 화이트", boxEa: 500, palletEa: 5000 },
+  { code: "C-202", name: "캡 28파이 블랙", boxEa: 400, palletEa: 4000 },
+  { code: "C-210", name: "캡 24파이 화이트", boxEa: 600, palletEa: 6000 },
+
+  { code: "L-009", name: "라벨 500ml 화이트", boxEa: 1000, palletEa: 10000 },
+  { code: "L-010", name: "라벨 1L 화이트", boxEa: 800, palletEa: 8000 },
+  { code: "L-020", name: "라벨 2L 투명", boxEa: 700, palletEa: 7000 },
+
+  { code: "B-101", name: "박스 500ml 전용", boxEa: 50, palletEa: 500 },
+  { code: "B-102", name: "박스 1L 전용", boxEa: 40, palletEa: 400 },
 ];
 
-// ✅ page.tsx에서 초기 itemsByOrderId 만들 때 필요해서 export
+// ✅ 주문ID 기반으로 "항상 같은 랜덤"이 나오도록 시드 랜덤 생성기
+const hashSeed = (s: string) => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+};
+
+const mulberry32 = (seed: number) => {
+  return () => {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const pickUnique = <T,>(arr: T[], count: number, rnd: () => number): T[] => {
+  const copy = [...arr];
+  const out: T[] = [];
+  const n = Math.min(count, copy.length);
+  for (let i = 0; i < n; i++) {
+    const idx = Math.floor(rnd() * copy.length);
+    out.push(copy[idx]);
+    copy.splice(idx, 1);
+  }
+  return out;
+};
+
+const pickFrom = (candidates: number[], rnd: () => number) =>
+  candidates[Math.floor(rnd() * candidates.length)];
+
 export const buildInitialItemsByOrder = (orders: Order[]): Record<string, OrderItem[]> => {
   const map: Record<string, OrderItem[]> = {};
+
   orders.forEach((o) => {
-    map[o.id] = baseItems.map((it) => ({ ...it }));
+    const rnd = mulberry32(hashSeed(o.id));
+
+    // ✅ 주문마다 품목 개수 다르게 (4~7개)
+    const itemCount = 4 + Math.floor(rnd() * 4); // 4~7
+
+    // ✅ "차량출고"는 용기류(P-코드) 비중 높게
+    const catalog =
+      o.zone === "차량출고"
+        ? [
+            ...PRODUCT_CATALOG.filter((p) => p.code.startsWith("P-")),
+            ...PRODUCT_CATALOG.filter((p) => p.code.startsWith("C-") || p.code.startsWith("L-")),
+          ]
+        : PRODUCT_CATALOG;
+
+    const picked = pickUnique(catalog, itemCount, rnd);
+
+    // ✅ 차량출고는 대량 수량 위주
+    const vehicleQtyCandidates = [3000, 5000, 10000];
+
+    // ✅ 일반 주문은 중소량 다양화
+    const normalQtyCandidates = [30, 50, 80, 100, 150, 200, 300, 500, 800, 1000, 1500];
+
+    const items: OrderItem[] = picked.map((p) => {
+      const orderQty =
+        o.zone === "차량출고"
+          ? pickFrom(vehicleQtyCandidates, rnd)
+          : pickFrom(normalQtyCandidates, rnd);
+
+      // ✅ 재고는 주문수량 대비 랜덤하게 (부족/여유 섞이게)
+      const low = rnd() < 0.35;
+
+      const stockRatio = low ? (0.1 + rnd() * 0.5) : (0.7 + rnd() * 0.7);
+      const stockQty = Math.max(0, Math.floor(orderQty * stockRatio));
+
+      return {
+        code: p.code,
+        name: p.name,
+        orderQty,
+        stockQty,
+        lowStock: low,
+        boxEa: p.boxEa,
+        palletEa: p.palletEa ?? 0,
+      } as any;
+    });
+
+    map[o.id] = items;
   });
+
   return map;
 };
 
@@ -63,8 +164,16 @@ export default function OrderManagement({
 }: Props) {
   const [activeOrderId, setActiveOrderId] = useState<string>(orders[0]?.id ?? "");
 
-  // 🔸 출고 구분 필터 (수도권 / 비수도권 / 차량출고)
+  // 🔸 출고 구분 필터
   const [zoneFilter, setZoneFilter] = useState<ZoneFilter>("ALL");
+
+  // ✅ 차량출고: 파렛트 일괄이송 모달
+  const [carBatchOpen, setCarBatchOpen] = useState(false);
+
+  // ✅ 주문별 체크 상태(모달에서 유지됨)
+  const [carBatchDraftByOrder, setCarBatchDraftByOrder] = useState<
+    Record<string, Record<string, boolean>>
+  >({});
 
   // 🔸 긴급 호출 모달
   const [robotModalOpen, setRobotModalOpen] = useState(false);
@@ -106,23 +215,18 @@ export default function OrderManagement({
       ),
     );
 
-    // 주문 바꾸면 첫 번째 품목으로 프리뷰 초기화
     const firstItem = itemsByOrderId[id]?.[0];
-    if (firstItem) {
-      setPreviewProduct({ code: firstItem.code, name: firstItem.name });
-    }
+    if (firstItem) setPreviewProduct({ code: firstItem.code, name: firstItem.name });
   };
 
-  // 필터 탭에서 존 변경 시, 현재 필터에서 첫 주문을 자동 선택
+  // 필터 탭 변경
   const handleChangeZoneFilter = (zone: ZoneFilter) => {
     setZoneFilter(zone);
     const nextList = zone === "ALL" ? orders : orders.filter((o) => o.zone === zone);
     if (nextList.length > 0) {
       setActiveOrderId(nextList[0].id);
       const firstItem = itemsByOrderId[nextList[0].id]?.[0];
-      if (firstItem) {
-        setPreviewProduct({ code: firstItem.code, name: firstItem.name });
-      }
+      if (firstItem) setPreviewProduct({ code: firstItem.code, name: firstItem.name });
     }
   };
 
@@ -156,9 +260,7 @@ export default function OrderManagement({
     setItemsByOrderId((prev) => ({ ...prev, [newId]: emergencyItems }));
     setActiveOrderId(newId);
 
-    if (emergencyItems[0]) {
-      setPreviewProduct({ code: emergencyItems[0].code, name: emergencyItems[0].name });
-    }
+    if (emergencyItems[0]) setPreviewProduct({ code: emergencyItems[0].code, name: emergencyItems[0].name });
   };
 
   // 출고 완료
@@ -197,7 +299,7 @@ export default function OrderManagement({
         </div>
       </div>
 
-      {/* 본문 영역 : 주문서 목록 + 주문 상세 + 우측 이미지 프리뷰 */}
+      {/* 본문 영역 */}
       <div className="grid grid-cols-12 gap-4">
         {/* 왼쪽: 주문서 목록 + 존 필터 탭 */}
         <div className="col-span-3 flex flex-col gap-2">
@@ -224,8 +326,7 @@ export default function OrderManagement({
                         active
                           ? "bg-blue-600 border-blue-600 text-white shadow-sm"
                           : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
-                      }
-                    `}
+                      }`}
                   >
                     {tab.label}
                   </button>
@@ -238,6 +339,8 @@ export default function OrderManagement({
             orders={visibleOrders}
             activeOrderId={activeOrderId}
             onSelectOrder={handleSelectOrder}
+            onRefresh={() => alert("새로고침(데모)")}
+            onOpenCarBatch={zoneFilter === "차량출고" ? () => setCarBatchOpen(true) : undefined}
           />
         </div>
 
@@ -248,9 +351,10 @@ export default function OrderManagement({
             items={activeItems}
             onChangeStatus={(status) => updateOrderStatus(activeOrder.id, status)}
             onComplete={handleCompleteOrder}
-            onSelectItemForPreview={(item) =>
-              setPreviewProduct({ code: item.code, name: item.name })
-            }
+            onSelectItemForPreview={(item) => setPreviewProduct({ code: item.code, name: item.name })}
+            onUpdateItems={(orderId, nextItems) => {
+              setItemsByOrderId((prev) => ({ ...prev, [orderId]: nextItems }));
+            }}
           />
         </div>
 
@@ -284,6 +388,21 @@ export default function OrderManagement({
           </section>
         </div>
       </div>
+
+      {/* ✅ 차량출고: 파렛트 일괄이송(신버전) */}
+      <CarBatchTransferModal
+        open={carBatchOpen}
+        onClose={() => setCarBatchOpen(false)}
+        orders={orders}
+        itemsByOrderId={itemsByOrderId}
+        draftByOrder={carBatchDraftByOrder}
+        onChangeDraftByOrder={setCarBatchDraftByOrder}
+        onUpdateItems={(orderId, nextItems) => {
+          setItemsByOrderId((prev) => ({ ...prev, [orderId]: nextItems }));
+        }}
+        occupiedSlotIds={[]}
+        initialOrderId={activeOrder?.id ?? ""}
+      />
 
       {/* 긴급 호출 모달 */}
       <RobotProductCallModal
