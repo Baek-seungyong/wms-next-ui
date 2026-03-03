@@ -138,7 +138,7 @@ export function LayoutShell({ children }: LayoutShellProps) {
               className="flex items-center gap-1 rounded-full border border-white/70 bg-black/80 px-4 py-1 text-[11px] text-white shadow-sm hover:bg-black hover:border-white"
             >
               <span className="text-xs">🤖</span>
-              <span>AMR 수동 호출</span>
+              <span>제품 수동 호출</span>
             </button>
 
             <button

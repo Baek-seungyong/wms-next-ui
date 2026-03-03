@@ -85,10 +85,12 @@ export function Step2ResidualPrep({
   const plannedIds: string[] = (draft as any).plannedResidualPalletIds ?? [];
   const calledIds: string[] = (draft as any).calledResidualPalletIds ?? [];
 
-  const plannedTotalBox = plannedIds.reduce((sum, id) => {
-    return sum + Number(draft.residualBoxPickMap?.[id] ?? 0);
-  }, 0);
+  // ✅ 리스트 선택 표시: 자동호출로 선택된 것도 포함해서 “선택됨” 표시
+  const selectedSet = useMemo(() => {
+    return new Set<string>([...plannedIds, ...calledIds]);
+  }, [plannedIds, calledIds]);
 
+  // ✅ 입력은 "호출된 파렛트"에서만 한다 (그래도 값 저장은 residualBoxPickMap을 계속 사용)
   const calledTotalBox = calledIds.reduce((sum, id) => {
     return sum + Number(draft.residualBoxPickMap?.[id] ?? 0);
   }, 0);
@@ -100,7 +102,7 @@ export function Step2ResidualPrep({
 
     const next: any = { ...draft };
 
-    // ✅ 예정만 세팅
+    // ✅ 예정만 세팅 (수량 입력은 호출된 파렛트에서)
     next.plannedResidualPalletIds = [row.id];
 
     next.residualPalletMeta = {
@@ -108,7 +110,7 @@ export function Step2ResidualPrep({
       [row.id]: { boxQty: row.boxQty, eaPerBox: row.eaPerBox },
     };
 
-    // 기본 입력값: 목표 박스 수량
+    // ✅ 호출 후 입력하기 편하게 기본값은 미리 넣어둠(표시는 호출된 파렛트에서만)
     next.residualBoxPickMap = {
       ...(next.residualBoxPickMap || {}),
       [row.id]: Math.max(0, targetBoxQty || 0),
@@ -120,6 +122,7 @@ export function Step2ResidualPrep({
   const handleManualPick = (row: ResidualPalletRow) => {
     const next: any = { ...draft };
 
+    // ✅ 예정에 추가(중복 방지)
     const cur = new Set(next.plannedResidualPalletIds || []);
     cur.add(row.id);
     next.plannedResidualPalletIds = Array.from(cur);
@@ -129,7 +132,7 @@ export function Step2ResidualPrep({
       [row.id]: { boxQty: row.boxQty, eaPerBox: row.eaPerBox },
     };
 
-    // 기본 입력값: 목표 박스 수량 (이미 있으면 유지)
+    // ✅ 기본 입력값은 미리 넣어둠(표시는 호출된 파렛트에서만)
     next.residualBoxPickMap = {
       ...(next.residualBoxPickMap || {}),
       [row.id]:
@@ -143,25 +146,50 @@ export function Step2ResidualPrep({
 
   const removePlanned = (id: string) => {
     const next: any = { ...draft };
-    next.plannedResidualPalletIds = (next.plannedResidualPalletIds || []).filter((x: string) => x !== id);
+    next.plannedResidualPalletIds = (next.plannedResidualPalletIds || []).filter(
+      (x: string) => x !== id,
+    );
 
+    // ✅ 값도 같이 제거(원하면 유지해도 되는데, 여기선 깔끔하게 제거)
     const { [id]: _, ...rest } = next.residualBoxPickMap || {};
     next.residualBoxPickMap = rest;
 
     onChangeDraft(next);
   };
 
-  const confirmCall = () => {
+  // ✅ 예정 → 호출됨(=AMR 호출 버튼 역할)
+  const callPlanned = () => {
     if (plannedIds.length === 0) return;
 
     const next: any = { ...draft };
 
-    // ✅ 예정 → 호출됨(확정)으로 이동 (중복 방지)
+    // ✅ 예정 → 호출됨(중복 방지)
     const merged = new Set<string>([...(next.calledResidualPalletIds || []), ...plannedIds]);
     next.calledResidualPalletIds = Array.from(merged);
 
     // ✅ 예정 비움
     next.plannedResidualPalletIds = [];
+
+    onChangeDraft(next);
+  };
+
+  // ✅ 호출된 파렛트 입력 확정(하단 확인 버튼)
+  const confirmCalledInputs = () => {
+    if (calledIds.length === 0) return;
+
+    const next: any = { ...draft };
+
+    // ✅ “상단 이송현황”이 draft를 읽는 구조라면 바뀌게 만들 수 있도록 값 저장
+    // - planBoxQty / planEaQty 같은 키가 types에 없으면 any로 들어감
+    const ea = Number(eaPerBox ?? 0);
+    next.step2ConfirmedCalledBoxQty = calledTotalBox;
+    next.step2ConfirmedCalledEaQty = calledTotalBox * ea;
+    next.step2ConfirmedCalledAt = new Date().toISOString();
+
+    // ✅ 원하면 이걸 planBoxQty에 덮어써서 상단 표시를 강제로 바꾸는 방식도 가능
+    // (부모가 planBoxQty를 draft.planBoxQty로 만들고 있다면 바로 반영됨)
+    next.planBoxQty = calledTotalBox;
+    next.planEaQty = calledTotalBox * ea;
 
     onChangeDraft(next);
   };
@@ -183,7 +211,7 @@ export function Step2ResidualPrep({
             onClick={handleAutoCall}
             className="rounded-full bg-gray-900 px-3 py-1 text-[12px] font-semibold text-white hover:opacity-90"
           >
-            자동 적용
+            자동 호출
           </button>
           <button
             type="button"
@@ -195,56 +223,69 @@ export function Step2ResidualPrep({
         </div>
       </div>
 
-      {/* 지정호출 패널(간단 버전) */}
+      {/* ✅ 지정호출 패널(독립감 + 스크롤 + 선택 표시) */}
       {pickerOpen ? (
-        <div className="rounded-xl border bg-white p-3">
-          <div className="mb-2 text-[12px] font-semibold text-gray-700">
-            잔량 파렛트 후보 ({rows.length})
+        <div className="rounded-xl border bg-white p-3 shadow-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[12px] font-semibold text-gray-700">
+              잔량 파렛트 선택 ({rows.length})
+            </div>
+            <div className="text-[11px] text-gray-500">
+              선택됨: <b className="text-gray-900">{selectedSet.size}</b>
+            </div>
           </div>
-          <div className="space-y-2">
-            {rows.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => handleManualPick(r)}
-                className="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[12px] hover:bg-gray-50"
-              >
-                <div>
-                  <div className="font-semibold text-gray-900">{r.id}</div>
-                  <div className="mt-0.5 text-[11px] text-gray-500">
-                    {r.location} · {r.lotNo}
-                  </div>
-                </div>
-                <div className="text-right text-[11px] text-gray-600">
-                  <div>잔량 {r.boxQty.toLocaleString()} BOX</div>
-                  <div>ea/box {Number(r.eaPerBox || 0).toLocaleString()}</div>
-                </div>
-              </button>
-            ))}
+
+          {/* ✅ 고정 높이 + 우측 스크롤 */}
+          <div className="max-h-[240px] overflow-y-auto pr-1">
+            <div className="space-y-2">
+              {rows.map((r) => {
+                const isSelected = selectedSet.has(r.id);
+
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => handleManualPick(r)}
+                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[12px] transition ${
+                      isSelected
+                        ? "border-blue-300 bg-blue-50"
+                        : "border-gray-200 bg-white hover:bg-gray-50"
+                    }`}
+                  >
+                    <div>
+                      <div className="font-semibold text-gray-900">{r.id}</div>
+                      <div className="mt-0.5 text-[11px] text-gray-500">
+                        {r.location} · {r.lotNo}
+                      </div>
+                    </div>
+                    <div className="text-right text-[11px] text-gray-600">
+                      <div>잔량 {r.boxQty.toLocaleString()} BOX</div>
+                      <div>ea/box {Number(r.eaPerBox || 0).toLocaleString()}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       ) : null}
 
-      {/* ✅ 예정 파렛트(확정 전) */}
+      {/* ✅ 예정 파렛트(호출 전) - 수량 입력 없음 */}
       <div className="rounded-xl border bg-white p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="text-[12px] font-semibold text-gray-700">
-            예정 파렛트 ({plannedIds.length})
+            선택 파렛트 ({plannedIds.length})
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="text-[11px] text-gray-500">
-              입력 합계: <b className="text-gray-900">{plannedTotalBox.toLocaleString()}</b> BOX
-            </div>
-            <button
-              type="button"
-              disabled={plannedIds.length === 0}
-              onClick={confirmCall}
-              className="rounded-full bg-emerald-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
-            >
-              확인
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={plannedIds.length === 0}
+            onClick={callPlanned}
+            className="rounded-full bg-gray-900 px-3 py-1 text-[12px] font-semibold text-white hover:opacity-90 disabled:opacity-40"
+            title="예정 파렛트를 호출된 파렛트로 이동"
+          >
+            호출
+          </button>
         </div>
 
         {plannedIds.length === 0 ? (
@@ -254,7 +295,6 @@ export function Step2ResidualPrep({
             {plannedIds.map((id) => {
               const meta = draft.residualPalletMeta?.[id];
               const maxBox = Number(meta?.boxQty ?? 0);
-              const val = Number(draft.residualBoxPickMap?.[id] ?? 0);
 
               return (
                 <div
@@ -268,30 +308,13 @@ export function Step2ResidualPrep({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={maxBox || undefined}
-                      className="w-24 rounded-md border px-2 py-1 text-[12px]"
-                      value={val}
-                      onChange={(e) => {
-                        const nextVal = Math.max(0, Number(e.target.value || 0));
-                        onChangeDraft({
-                          ...draft,
-                          residualBoxPickMap: { ...(draft.residualBoxPickMap || {}), [id]: nextVal },
-                        });
-                      }}
-                    />
-                    <span className="text-[12px] text-gray-600">BOX</span>
-                    <button
-                      type="button"
-                      onClick={() => removePlanned(id)}
-                      className="rounded-md border px-2 py-1 text-[12px] text-gray-600 hover:bg-gray-50"
-                    >
-                      제거
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removePlanned(id)}
+                    className="rounded-md border px-2 py-1 text-[12px] text-gray-600 hover:bg-gray-50"
+                  >
+                    제거
+                  </button>
                 </div>
               );
             })}
@@ -299,11 +322,11 @@ export function Step2ResidualPrep({
         )}
       </div>
 
-      {/* ✅ 호출된 파렛트(확정 후) - 락 */}
+      {/* ✅ 호출된 파렛트(호출 후) - 여기서 수량 입력 */}
       <div className="rounded-xl border bg-gray-50 p-3">
         <div className="mb-2 flex items-center justify-between">
           <div className="text-[12px] font-semibold text-gray-700">
-            호출된 파렛트 ({calledIds.length})
+            호출 파렛트 ({calledIds.length})
           </div>
           <div className="text-[11px] text-gray-500">
             입력 합계: <b className="text-gray-900">{calledTotalBox.toLocaleString()}</b> BOX
@@ -313,36 +336,62 @@ export function Step2ResidualPrep({
         {calledIds.length === 0 ? (
           <div className="text-[12px] text-gray-500"></div>
         ) : (
-          <div className="space-y-2">
-            {calledIds.map((id) => {
-              const meta = draft.residualPalletMeta?.[id];
-              const maxBox = Number(meta?.boxQty ?? 0);
-              const val = Number(draft.residualBoxPickMap?.[id] ?? 0);
+          <>
+            <div className="space-y-2">
+              {calledIds.map((id) => {
+                const meta = draft.residualPalletMeta?.[id];
+                const maxBox = Number(meta?.boxQty ?? 0);
+                const val = Number(draft.residualBoxPickMap?.[id] ?? 0);
 
-              return (
-                <div
-                  key={id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2"
-                >
-                  <div>
-                    <div className="text-[12px] font-semibold text-gray-900">{id}</div>
-                    <div className="mt-0.5 text-[11px] text-gray-500">
-                      잔량 {maxBox.toLocaleString()} BOX
+                return (
+                  <div
+                    key={id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2"
+                  >
+                    <div>
+                      <div className="text-[12px] font-semibold text-gray-900">{id}</div>
+                      <div className="mt-0.5 text-[11px] text-gray-500">
+                        잔량 {maxBox.toLocaleString()} BOX
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={maxBox || undefined}
+                        className="w-24 rounded-md border px-2 py-1 text-[12px]"
+                        value={val}
+                        onChange={(e) => {
+                          const nextValRaw = Number(e.target.value || 0);
+                          const nextVal = Math.max(0, nextValRaw);
+                          onChangeDraft({
+                            ...draft,
+                            residualBoxPickMap: {
+                              ...(draft.residualBoxPickMap || {}),
+                              [id]: nextVal,
+                            },
+                          });
+                        }}
+                      />
+                      <span className="text-[12px] text-gray-600">BOX</span>
                     </div>
                   </div>
+                );
+              })}
+            </div>
 
-                  <div className="flex items-center gap-2">
-                    <div className="text-[12px] text-gray-700">
-                      <b className="tabular-nums">{val.toLocaleString()}</b> BOX
-                    </div>
-                    <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] text-gray-600">
-                      호출 확정
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+            {/* ✅ 하단 확인 버튼: 입력 확정 → 상단 현황 바뀌게 draft에 값 저장 */}
+            <div className="mt-3 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={confirmCalledInputs}
+                className="rounded-full bg-emerald-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-emerald-700"
+              >
+                확인
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>
