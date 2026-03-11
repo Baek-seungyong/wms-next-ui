@@ -44,9 +44,24 @@ export function Step3ResidualResult({
   // 더미 데이터
   const rows: ToteRow[] = useMemo(
     () => [
-      { id: `${productCode}-TOTE-01`, lotNo: "LOT-2501-A", location: "피킹라인", totalEa: 220 },
-      { id: `${productCode}-TOTE-02`, lotNo: "LOT-2501-A", location: "피킹라인", totalEa: 80 },
-      { id: `${productCode}-TOTE-03`, lotNo: "LOT-2412-C", location: "피킹라인", totalEa: 400 },
+      {
+        id: `${productCode}-TOTE-01`,
+        lotNo: "LOT-2501-A",
+        location: "피킹라인",
+        totalEa: 220,
+      },
+      {
+        id: `${productCode}-TOTE-02`,
+        lotNo: "LOT-2501-A",
+        location: "피킹라인",
+        totalEa: 80,
+      },
+      {
+        id: `${productCode}-TOTE-03`,
+        lotNo: "LOT-2412-C",
+        location: "피킹라인",
+        totalEa: 400,
+      },
     ],
     [productCode],
   );
@@ -55,6 +70,7 @@ export function Step3ResidualResult({
   const plannedIds: string[] = (draft as any).plannedToteIds ?? [];
   const calledIds: string[] = draft.calledToteIds ?? [];
 
+  // ✅ 합계(입력값 기준)
   const plannedTotalEa = plannedIds.reduce(
     (sum, id) => sum + Number(draft.toteEaPickMap?.[id] ?? 0),
     0,
@@ -66,7 +82,7 @@ export function Step3ResidualResult({
   );
 
   // ============================
-  // 예정 추가
+  // 예정 추가 (선택만 / 수량입력은 호출된에서)
   // ============================
   const addPlanned = (row: ToteRow) => {
     const next: any = { ...draft };
@@ -80,17 +96,19 @@ export function Step3ResidualResult({
       [row.id]: { totalEa: row.totalEa, lotNo: row.lotNo, location: row.location },
     };
 
+    // ✅ 예정 단계에서는 기본 입력값 0으로 두고(= 호출된에서만 입력)
+    // 기존에 값이 있으면 유지
     next.toteEaPickMap = {
       ...(next.toteEaPickMap || {}),
-      [row.id]:
-        Number(next.toteEaPickMap?.[row.id] ?? 0) > 0
-          ? Number(next.toteEaPickMap?.[row.id] ?? 0)
-          : Math.max(0, Number(targetEaQty || 0)),
+      [row.id]: Number(next.toteEaPickMap?.[row.id] ?? 0),
     };
 
     onChangeDraft(next);
   };
 
+  // ============================
+  // 자동 호출: "예정"에 1개 넣기 (수량입력은 호출된에서)
+  // ============================
   const handleAutoCall = () => {
     if (!rows.length) return;
 
@@ -108,24 +126,78 @@ export function Step3ResidualResult({
     const next: any = { ...draft };
     next.plannedToteIds = (next.plannedToteIds || []).filter((x: string) => x !== id);
 
-    const { [id]: _, ...rest } = next.toteEaPickMap || {};
-    next.toteEaPickMap = rest;
+    onChangeDraft(next);
+  };
+
+  // ============================
+  // 예정 → 호출 (확정 이동)
+  // ============================
+  const callPlannedToCalled = () => {
+    if (plannedIds.length === 0) return;
+
+    const next: any = { ...draft };
+
+    // called에 합치기
+    const merged = new Set<string>([...(next.calledToteIds || []), ...plannedIds]);
+    next.calledToteIds = Array.from(merged);
+
+    // ✅ 호출된으로 넘어갈 때, 아직 입력값이 0이면 "남은 목표" 기준으로 자동 채워주기(편의)
+    //  - 이미 값이 있으면 그대로 둠
+    const beforeCalledTotal = (next.calledToteIds || [])
+      .filter((id: string) => !plannedIds.includes(id))
+      .reduce((sum: number, id: string) => sum + Number(next.toteEaPickMap?.[id] ?? 0), 0);
+
+    let remain = Math.max(0, Number(targetEaQty || 0) - beforeCalledTotal);
+
+    next.toteEaPickMap = { ...(next.toteEaPickMap || {}) };
+    plannedIds.forEach((id) => {
+      const currentVal = Number(next.toteEaPickMap?.[id] ?? 0);
+      if (currentVal > 0) return;
+
+      const meta = next.toteMeta?.[id];
+      const maxEa = Number(meta?.totalEa ?? 0);
+
+      const fill = Math.min(remain, maxEa);
+      next.toteEaPickMap[id] = fill;
+      remain = Math.max(0, remain - fill);
+    });
+
+    // 예정 비우기
+    next.plannedToteIds = [];
+
+    // ✅ “호출” 버튼을 누른 순간: 호출 실행됨(단, 상단 현황 반영은 아래 확인에서)
+    next.toteCalledAt = Date.now();
 
     onChangeDraft(next);
   };
 
   // ============================
-  // 예정 → 호출 확정
+  // 호출된 토트: 수량 입력 (여기서만)
   // ============================
-  const confirmCall = () => {
-    if (plannedIds.length === 0) return;
+  const updateCalledPickEa = (id: string, nextVal: number) => {
+    const next: any = { ...draft };
+    next.toteEaPickMap = {
+      ...(next.toteEaPickMap || {}),
+      [id]: Math.max(0, Number(nextVal || 0)),
+    };
+    onChangeDraft(next);
+  };
+
+  // ============================
+  // 호출된 토트: 하단 "확인" (상단 현황 반영용 플래그)
+  // ============================
+  const confirmCalledTotes = () => {
+    if (calledIds.length === 0) return;
 
     const next: any = { ...draft };
 
-    const merged = new Set<string>([...(next.calledToteIds || []), ...plannedIds]);
-    next.calledToteIds = Array.from(merged);
-
-    next.plannedToteIds = [];
+    // ✅ 상단 현황 반영 트리거용(부모에서 이 값 보고 반영하면 됨)
+    next.toteCallConfirmed = true;
+    next.toteConfirmedAt = Date.now();
+    next.toteConfirmedTotalEa = calledIds.reduce(
+      (sum, id) => sum + Number(next.toteEaPickMap?.[id] ?? 0),
+      0,
+    );
 
     onChangeDraft(next);
   };
@@ -174,61 +246,87 @@ export function Step3ResidualResult({
           <div className="mb-2 text-[12px] font-semibold text-gray-700">
             토트 후보 ({rows.length})
           </div>
-          <div className="space-y-2">
-            {rows.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => addPlanned(r)}
-                className="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[12px] hover:bg-gray-50"
-              >
-                <div>
-                  <div className="font-semibold text-gray-900">{r.id}</div>
-                  <div className="text-[11px] text-gray-500">
-                    {r.location} · {r.lotNo}
+
+          <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2">
+            {rows.map((r) => {
+              const isPlanned = plannedIds.includes(r.id);
+              const isCalled = calledIds.includes(r.id);
+
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => addPlanned(r)}
+                  className={[
+                    "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[12px] transition",
+                    "hover:bg-gray-50",
+                    isCalled ? "opacity-60 cursor-not-allowed" : "",
+                    isPlanned ? "bg-blue-50 border-blue-200" : "bg-white",
+                  ].join(" ")}
+                  disabled={isCalled}
+                  title={isCalled ? "이미 호출된 토트야" : "예정 토트로 추가"}
+                >
+                  <div>
+                    <div className="font-semibold text-gray-900">{r.id}</div>
+                    <div className="text-[11px] text-gray-500">
+                      {r.location} · {r.lotNo}
+                    </div>
                   </div>
-                </div>
-                <div className="text-right text-[11px] text-gray-600">
-                  재고 {r.totalEa.toLocaleString()} EA
-                </div>
-              </button>
-            ))}
+
+                  <div className="text-right text-[11px] text-gray-600">
+                    재고 {r.totalEa.toLocaleString()} EA
+                    {isPlanned && (
+                      <div className="mt-1 inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] text-blue-700">
+                        예정
+                      </div>
+                    )}
+                    {isCalled && (
+                      <div className="mt-1 inline-flex rounded-full bg-gray-200 px-2 py-0.5 text-[10px] text-gray-700">
+                        호출됨
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* ============================= */}
-      {/* 예정 토트 */}
+      {/* 예정 토트 (선택만 / 수량 입력 없음) */}
       {/* ============================= */}
       <div className="rounded-xl border bg-white p-3">
         <div className="mb-2 flex items-center justify-between">
           <div className="text-[12px] font-semibold text-gray-700">
-            예정 토트 ({plannedIds.length})
+            예정 토트박스 ({plannedIds.length})
           </div>
 
           <div className="flex items-center gap-3">
             <div className="text-[11px] text-gray-500">
               입력 합계: <b>{plannedTotalEa.toLocaleString()}</b> EA
             </div>
+
+            {/* ✅ 여기 버튼을 "호출"로 변경 */}
             <button
               type="button"
               disabled={plannedIds.length === 0}
-              onClick={confirmCall}
-              className="rounded-full bg-emerald-600 px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-40"
+              onClick={callPlannedToCalled}
+              className="rounded-full bg-slate-800 px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-40"
             >
-              확인
+              호출
             </button>
           </div>
         </div>
 
         {plannedIds.length === 0 ? (
-          <div className="text-[12px] text-gray-500"></div>
+          <div className="text-[12px] text-gray-500">
+          </div>
         ) : (
           <div className="space-y-2">
             {plannedIds.map((id) => {
               const meta = draft.toteMeta?.[id];
               const maxEa = Number(meta?.totalEa ?? 0);
-              const val = Number(draft.toteEaPickMap?.[id] ?? 0);
 
               return (
                 <div
@@ -238,27 +336,15 @@ export function Step3ResidualResult({
                   <div>
                     <div className="font-semibold text-gray-900">{id}</div>
                     <div className="text-[11px] text-gray-500">
-                      재고 {maxEa.toLocaleString()} EA
+                      {meta?.location ?? "-"} · {meta?.lotNo ?? "-"} · 재고 {maxEa.toLocaleString()} EA
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={maxEa || undefined}
-                      className="w-24 rounded-md border px-2 py-1 text-[12px]"
-                      value={val}
-                      onChange={(e) =>
-                        onChangeDraft({
-                          ...draft,
-                          toteEaPickMap: {
-                            ...(draft.toteEaPickMap || {}),
-                            [id]: Math.max(0, Number(e.target.value || 0)),
-                          },
-                        })
-                      }
-                    />
+                    {/* ✅ 예정에서는 수량 입력 제거 */}
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700">
+                      예정
+                    </span>
                     <button
                       type="button"
                       onClick={() => removePlanned(id)}
@@ -275,23 +361,27 @@ export function Step3ResidualResult({
       </div>
 
       {/* ============================= */}
-      {/* 호출 확정 토트 (락) */}
+      {/* 호출된 토트 (여기서 수량 입력 + 하단 확인) */}
       {/* ============================= */}
       <div className="rounded-xl border bg-gray-50 p-3">
         <div className="mb-2 flex items-center justify-between">
           <div className="text-[12px] font-semibold text-gray-700">
-            호출된 토트 ({calledIds.length})
+            호출 토트박스 ({calledIds.length})
           </div>
+
           <div className="text-[11px] text-gray-500">
             입력 합계: <b>{calledTotalEa.toLocaleString()}</b> EA
           </div>
         </div>
 
         {calledIds.length === 0 ? (
-          <div className="text-[12px] text-gray-500"></div>
+          <div className="text-[12px] text-gray-500">
+          </div>
         ) : (
           <div className="space-y-2">
             {calledIds.map((id) => {
+              const meta = draft.toteMeta?.[id];
+              const maxEa = Number(meta?.totalEa ?? 0);
               const val = Number(draft.toteEaPickMap?.[id] ?? 0);
 
               return (
@@ -299,16 +389,46 @@ export function Step3ResidualResult({
                   key={id}
                   className="flex items-center justify-between rounded-lg border bg-white px-3 py-2"
                 >
-                  <div className="font-semibold text-gray-900">{id}</div>
-                  <div className="flex items-center gap-2 text-[12px]">
-                    <b>{val.toLocaleString()} EA</b>
+                  <div>
+                    <div className="font-semibold text-gray-900">{id}</div>
+                    <div className="text-[11px] text-gray-500">
+                      {meta?.location ?? "-"} · {meta?.lotNo ?? "-"} · 재고 {maxEa.toLocaleString()} EA
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={maxEa || undefined}
+                      className="w-24 rounded-md border px-2 py-1 text-[12px]"
+                      value={val}
+                      onChange={(e) => updateCalledPickEa(id, Number(e.target.value || 0))}
+                    />
                     <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px]">
-                      호출 확정
+                      호출됨
                     </span>
                   </div>
                 </div>
               );
             })}
+          </div>
+        )}
+        <div className="mt-3 flex items-center justify-end">
+          <button
+            type="button"
+            disabled={calledIds.length === 0}
+            onClick={confirmCalledTotes}
+            className="rounded-full bg-emerald-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-emerald-700"
+              >
+            확인
+          </button>
+        </div>
+
+        {/* ✅ 부모에서 이 값 보고 상단 현황 반영하면 됨 */}
+        {(draft as any).toteCallConfirmed && (
+          <div className="mt-2 text-[11px] text-emerald-700">
+            · 호출 수량 확인 완료됨 (상단 현황 반영됨)
           </div>
         )}
       </div>

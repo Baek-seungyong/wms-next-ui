@@ -6,7 +6,6 @@ import type { Order, OrderItem, OrderStatus } from "./types";
 import { OrderList } from "./OrderList";
 import { OrderDetail } from "./OrderDetail";
 import { RobotProductCallModal } from "./RobotProductCallModal";
-
 import { CarBatchTransferModal } from "./CarBatchTransferModal";
 
 // 🔹 상품별 이미지 매핑 (실제 파일명에 맞게 수정해서 사용)
@@ -21,16 +20,45 @@ type ZoneFilter = "ALL" | "수도권" | "비수도권" | "차량출고";
 
 // ✅ page.tsx에서 초기값으로 쓰기 위해 export
 export const baseOrders: Order[] = [
-  { id: "ORD-251114-01", customer: "온라인몰 A", dueDate: "2025-11-15", status: "대기", zone: "수도권" },
-  { id: "ORD-251114-02", customer: "B몰", dueDate: "2025-11-15", status: "보류", zone: "비수도권" },
-  { id: "ORD-251114-03", customer: "C도매", dueDate: "2025-11-16", status: "출고중", zone: "수도권" },
-  { id: "ORD-251113-11", customer: "D연구소", dueDate: "2025-11-20", status: "완료", zone: "차량출고" },
-  { id: "ORD-251115-01", customer: "온라인몰 B", dueDate: "2025-11-17", status: "대기", zone: "수도권" },
-  { id: "ORD-251115-02", customer: "E도매", dueDate: "2025-11-17", status: "출고중", zone: "비수도권" },
-  { id: "ORD-251115-03", customer: "F식자재", dueDate: "2025-11-18", status: "보류", zone: "차량출고" },
-  { id: "ORD-251116-01", customer: "온라인몰 C", dueDate: "2025-11-18", status: "대기", zone: "수도권" },
-  { id: "ORD-251116-02", customer: "G도매", dueDate: "2025-11-19", status: "완료", zone: "비수도권" },
-  { id: "ORD-251116-03", customer: "H연구소", dueDate: "2025-11-19", status: "출고중", zone: "차량출고" },
+  {
+    id: "ORD-251114-01",
+    customer: "온라인몰 A",
+    dueDate: "2025-11-15",
+    status: "대기",
+    zone: "수도권",
+    communication: {
+      customerMemo: "문 앞 하차 말고 반드시 연락 후 인계해 주세요.",
+      managerMemo: "출고 전 수량 재확인 후 진행.",
+      fieldMemos: [],
+    },
+  } as any,
+  {
+    id: "ORD-251114-02",
+    customer: "B몰",
+    dueDate: "2025-11-15",
+    status: "보류",
+    zone: "비수도권",
+    communication: {
+      customerMemo: "파손 주의 요청.",
+      managerMemo: "",
+      fieldMemos: [
+        {
+          id: "fm-1",
+          author: "작업자A",
+          text: "피킹 대기 상태 확인함.",
+          createdAt: "2026-03-11 09:10",
+        },
+      ],
+    },
+  } as any,
+  { id: "ORD-251114-03", customer: "C도매", dueDate: "2025-11-16", status: "출고중", zone: "수도권" } as any,
+  { id: "ORD-251113-11", customer: "D연구소", dueDate: "2025-11-20", status: "완료", zone: "차량출고" } as any,
+  { id: "ORD-251115-01", customer: "온라인몰 B", dueDate: "2025-11-17", status: "대기", zone: "수도권" } as any,
+  { id: "ORD-251115-02", customer: "E도매", dueDate: "2025-11-17", status: "출고중", zone: "비수도권" } as any,
+  { id: "ORD-251115-03", customer: "F식자재", dueDate: "2025-11-18", status: "보류", zone: "차량출고" } as any,
+  { id: "ORD-251116-01", customer: "온라인몰 C", dueDate: "2025-11-18", status: "대기", zone: "수도권" } as any,
+  { id: "ORD-251116-02", customer: "G도매", dueDate: "2025-11-19", status: "완료", zone: "비수도권" } as any,
+  { id: "ORD-251116-03", customer: "H연구소", dueDate: "2025-11-19", status: "출고중", zone: "차량출고" } as any,
 ];
 
 // ✅ 제품 카탈로그 (주문마다 여기서 랜덤으로 뽑아씀)
@@ -140,6 +168,9 @@ export const buildInitialItemsByOrder = (orders: Order[]): Record<string, OrderI
         lowStock: low,
         boxEa: p.boxEa,
         palletEa: p.palletEa ?? 0,
+
+        // ✅ OrderDetail 프리뷰 모달에서 사용할 이미지 URL
+        imageUrl: PRODUCT_IMAGE_MAP[p.code] ?? "",
       } as any;
     });
 
@@ -178,11 +209,6 @@ export default function OrderManagement({
   // 🔸 긴급 호출 모달
   const [robotModalOpen, setRobotModalOpen] = useState(false);
 
-  // 🔸 오른쪽 상품 이미지 프리뷰용 상태
-  const [previewProduct, setPreviewProduct] = useState<{ code: string; name: string } | null>(
-    null,
-  );
-
   // 필터링된 주문 목록
   const visibleOrders = useMemo(() => {
     if (zoneFilter === "ALL") return orders;
@@ -214,20 +240,13 @@ export default function OrderManagement({
         o.id === id ? { ...o, status: o.status === "대기" ? "출고중" : o.status } : o,
       ),
     );
-
-    const firstItem = itemsByOrderId[id]?.[0];
-    if (firstItem) setPreviewProduct({ code: firstItem.code, name: firstItem.name });
   };
 
   // 필터 탭 변경
   const handleChangeZoneFilter = (zone: ZoneFilter) => {
     setZoneFilter(zone);
     const nextList = zone === "ALL" ? orders : orders.filter((o) => o.zone === zone);
-    if (nextList.length > 0) {
-      setActiveOrderId(nextList[0].id);
-      const firstItem = itemsByOrderId[nextList[0].id]?.[0];
-      if (firstItem) setPreviewProduct({ code: firstItem.code, name: firstItem.name });
-    }
+    if (nextList.length > 0) setActiveOrderId(nextList[0].id);
   };
 
   // 긴급 호출 모달 열기
@@ -254,13 +273,49 @@ export default function OrderManagement({
       name: p.name,
       orderQty: 0,
       stockQty: 0,
-    }));
+      imageUrl: "", // 긴급은 일단 없음
+    })) as any;
 
     setOrders((prev) => [emergencyOrder, ...prev]);
     setItemsByOrderId((prev) => ({ ...prev, [newId]: emergencyItems }));
     setActiveOrderId(newId);
+  };
 
-    if (emergencyItems[0]) setPreviewProduct({ code: emergencyItems[0].code, name: emergencyItems[0].name });
+  const handleAddFieldMemo = (orderId: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mi = String(now.getMinutes()).padStart(2, "0");
+
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== orderId) return o;
+
+        const communication = (o as any).communication ?? {};
+        const prevFieldMemos = communication.fieldMemos ?? [];
+
+        return {
+          ...(o as any),
+          communication: {
+            ...communication,
+            fieldMemos: [
+              ...prevFieldMemos,
+              {
+                id: `field-${Date.now()}`,
+                author: "작업자A",
+                text: trimmed,
+                createdAt: `${yyyy}-${mm}-${dd} ${hh}:${mi}`,
+              },
+            ],
+          },
+        };
+      }),
+    );
   };
 
   // 출고 완료
@@ -269,11 +324,6 @@ export default function OrderManagement({
     setItemsByOrderId((prev) => ({ ...prev, [orderId]: newItems }));
     updateOrderStatus(orderId, "완료");
   };
-
-  // 현재 보여줄 이미지 경로
-  const previewImageSrc = previewProduct
-    ? PRODUCT_IMAGE_MAP[previewProduct.code] ?? "/images/products/no-image.png"
-    : null;
 
   return (
     <div className="space-y-4">
@@ -285,16 +335,6 @@ export default function OrderManagement({
             <select className="border border-gray-300 rounded-md px-2 py-1 text-xs" disabled>
               <option>출고위치: 2층 피킹라인</option>
             </select>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <button
-              type="button"
-              className="text-xs px-3 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white"
-              onClick={openEmergencyModal}
-            >
-              🚨 긴급 호출
-            </button>
           </div>
         </div>
       </div>
@@ -340,52 +380,23 @@ export default function OrderManagement({
             activeOrderId={activeOrderId}
             onSelectOrder={handleSelectOrder}
             onRefresh={() => alert("새로고침(데모)")}
+            onOpenEmergency={openEmergencyModal}
             onOpenCarBatch={zoneFilter === "차량출고" ? () => setCarBatchOpen(true) : undefined}
           />
         </div>
 
-        {/* 가운데: 주문 상세 */}
-        <div className="col-span-6">
-          <OrderDetail
-            order={activeOrder}
-            items={activeItems}
-            onChangeStatus={(status) => updateOrderStatus(activeOrder.id, status)}
-            onComplete={handleCompleteOrder}
-            onSelectItemForPreview={(item) => setPreviewProduct({ code: item.code, name: item.name })}
-            onUpdateItems={(orderId, nextItems) => {
-              setItemsByOrderId((prev) => ({ ...prev, [orderId]: nextItems }));
-            }}
-          />
-        </div>
-
-        {/* 오른쪽: 상품 이미지 프리뷰 */}
-        <div className="col-span-3">
-          <section className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
-            <h2 className="text-base font-semibold">상품 이미지 프리뷰</h2>
-
-            {previewProduct ? (
-              <>
-                <div className="mt-1 text-[11px] text-gray-500">{previewProduct.name}</div>
-                <div className="text-[11px] text-gray-400">코드: {previewProduct.code}</div>
-
-                <div className="mt-4 flex-1">
-                  <div className="flex h-[520px] w-full items-center justify-center rounded-2xl border bg-gray-50">
-                    {previewImageSrc && (
-                      <img
-                        src={previewImageSrc}
-                        alt={previewProduct.name}
-                        className="h-full w-full object-contain"
-                      />
-                    )}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="mt-4 flex-1 rounded-2xl border bg-gray-50 p-4 text-[12px] text-gray-400">
-                왼쪽 주문 상세에서 상품을 선택하면 이미지가 표시됩니다.
-              </div>
-            )}
-          </section>
+        {/* 가운데: 주문 상세 (✅ 6 → 9로 확장) */}
+        <div className="col-span-9">
+        <OrderDetail
+          order={activeOrder}
+          items={activeItems}
+          onChangeStatus={(status) => updateOrderStatus(activeOrder.id, status)}
+          onComplete={handleCompleteOrder}
+          onAddFieldMemo={handleAddFieldMemo}
+          onUpdateItems={(orderId, nextItems) => {
+            setItemsByOrderId((prev) => ({ ...prev, [orderId]: nextItems }));
+          }}
+        />
         </div>
       </div>
 

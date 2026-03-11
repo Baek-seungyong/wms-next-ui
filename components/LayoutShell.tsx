@@ -68,6 +68,12 @@ export function LayoutShell({ children }: LayoutShellProps) {
                 >
                   <span>3. 입출고 히스토리</span>
                 </Link>
+                <Link
+                  href="/stock?tab=investigation"
+                  className="navbar-dropdown-link"
+                >
+                  <span>4. 재고조사</span>
+                </Link>
               </div>
             </div>
 

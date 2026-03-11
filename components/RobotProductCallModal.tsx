@@ -682,8 +682,8 @@ export function RobotProductCallModal({
                       }}
                       className="flex w-full items-center justify-between px-2 py-1 text-left hover:bg-gray-100"
                     >
-                      <span className="font-mono">{p.code}</span>
-                      <span className="ml-2 text-gray-500">{p.name}</span>
+                      <span className="text-gray-800">{p.name}</span>
+                      <span className="ml-2 font-mono text-gray-500">{p.code}</span>
                     </button>
                   ))}
                 </div>

@@ -1,7 +1,7 @@
 // components/OrderDetail.tsx
 "use client";
 
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { ReactElement } from "react";
 import type {
   Order,
@@ -30,8 +30,8 @@ type Props = {
   items: OrderItem[];
   onChangeStatus?: (status: OrderStatus) => void;
   onComplete?: (newItems: OrderItem[]) => void;
-  onSelectItemForPreview?: (item: OrderItem) => void;
   onUpdateItems?: (orderId: string, nextItems: OrderItem[]) => void;
+  onAddFieldMemo?: (orderId: string, text: string) => void;
 };
 
 type LocationStatus = "창고" | "입고중" | "작업중" | "출고중";
@@ -72,8 +72,8 @@ export function OrderDetail({
   items,
   onChangeStatus,
   onComplete,
-  onSelectItemForPreview,
   onUpdateItems,
+  onAddFieldMemo,
 }: Props): ReactElement | null {
   /* ================= 재고/경고 ================= */
   const hasLowStock = useMemo(() => items.some((i) => (i as any).lowStock), [items]);
@@ -173,6 +173,63 @@ export function OrderDetail({
 
   onUpdateItems(order.id, nextItems);
 };
+
+  /* ================= 이미지 프리뷰(아이콘 토글) ================= */
+  const [imgPreviewOpen, setImgPreviewOpen] = useState(false);
+  const [imgPreviewItem, setImgPreviewItem] = useState<OrderItem | null>(null);
+
+  const getItemImageUrl = (it: OrderItem) => {
+    return String(
+      (it as any).imageUrl ??
+        (it as any).imageURL ??
+        (it as any).image ??
+        (it as any).img ??
+        (it as any).thumbnailUrl ??
+        "",
+    );
+  };
+
+  const toggleImagePreview = (it: OrderItem) => {
+    const code = (it as any).code ?? (it as any).itemCode ?? "";
+    const curCode = imgPreviewItem
+      ? ((imgPreviewItem as any).code ?? (imgPreviewItem as any).itemCode ?? "")
+      : "";
+
+    if (imgPreviewOpen && curCode === code) {
+      setImgPreviewOpen(false);
+      setImgPreviewItem(null);
+      return;
+    }
+
+    setImgPreviewItem(it);
+    setImgPreviewOpen(true);
+  };
+
+   /* ================= 커뮤니케이션 히스토리 ================= */
+  const [commOpen, setCommOpen] = useState(false);
+  const [fieldMemoText, setFieldMemoText] = useState("");
+
+  const communication = (order as any)?.communication ?? {};
+  const customerMemo = String(communication.customerMemo ?? "").trim();
+  const managerMemo = String(communication.managerMemo ?? "").trim();
+  const fieldMemos = Array.isArray(communication.fieldMemos)
+    ? communication.fieldMemos
+    : [];
+
+  const communicationCount =
+    (customerMemo ? 1 : 0) +
+    (managerMemo ? 1 : 0) +
+    fieldMemos.length;
+
+  const handleAddFieldMemoClick = () => {
+    if (!order?.id) return;
+    const trimmed = fieldMemoText.trim();
+    if (!trimmed) return;
+
+    onAddFieldMemo?.(order.id, trimmed);
+    setFieldMemoText("");
+    setCommOpen(true);
+  };
 
   /** ================= 단위 정보(계산용) =================
    * - TransferFlowModal 상단의 '파렛트/박스/낱개' 자동 계산용
@@ -295,23 +352,6 @@ export function OrderDetail({
     );
   };
 
-  /* ================= 무한루프 방지: 첫 아이템 프리뷰 ================= */
-  const lastPreviewKeyRef = useRef<string>("");
-
-  useEffect(() => {
-    if (!onSelectItemForPreview) return;
-    if (!order) return;
-    if (items.length === 0) return;
-
-    const first = items[0];
-    const previewKey = `${order.id}::${(first as any).code ?? ""}`;
-
-    if (lastPreviewKeyRef.current === previewKey) return;
-    lastPreviewKeyRef.current = previewKey;
-
-    onSelectItemForPreview(first);
-  }, [order?.id, items, onSelectItemForPreview, order]);
-
   if (!order) {
     return (
       <div className="flex h-full items-center justify-center rounded-2xl border bg-white text-sm text-gray-500">
@@ -379,6 +419,128 @@ export function OrderDetail({
         </div>
       </div>
 
+            {/* ================= 커뮤니케이션 히스토리 ================= */}
+      <div className="mb-3 rounded-2xl border bg-white">
+        <button
+          type="button"
+          onClick={() => setCommOpen((v) => !v)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-semibold text-blue-600">
+              커뮤니케이션 히스토리
+            </span>
+
+            <span className="inline-flex min-w-[22px] items-center justify-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+              {communicationCount}
+            </span>
+
+            {(customerMemo || managerMemo || fieldMemos.length > 0) && (
+              <span className="text-[11px] text-amber-500">🔔</span>
+            )}
+          </div>
+
+          <span className="text-[11px] text-gray-400">
+            {commOpen ? "접기" : "열기"}
+          </span>
+        </button>
+
+        {commOpen && (
+          <div className="border-t px-4 py-4">
+            <div className="space-y-3">
+              {/* 고객메모 */}
+              {customerMemo && (
+                <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                      고객메모
+                    </span>
+                    <span className="text-[11px] text-gray-500">읽기전용</span>
+                  </div>
+                  <div className="text-[13px] text-gray-800">{customerMemo}</div>
+                </div>
+              )}
+
+              {/* 관리자메모 */}
+              {managerMemo && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                      관리자메모
+                    </span>
+                    <span className="text-[11px] text-gray-500">읽기전용</span>
+                  </div>
+                  <div className="text-[13px] text-gray-800">{managerMemo}</div>
+                </div>
+              )}
+
+              {/* 현장메모 목록 */}
+              <div className="rounded-2xl border bg-gray-50 px-4 py-3">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                    현장메모
+                  </span>
+                  <span className="text-[11px] text-gray-500">
+                    현장에서만 작성 가능
+                  </span>
+                </div>
+
+                {fieldMemos.length === 0 ? (
+                  <div className="mb-3 rounded-xl border border-dashed bg-white px-3 py-4 text-[12px] text-gray-400">
+                    아직 작성된 현장메모가 없어.
+                  </div>
+                ) : (
+                  <div className="mb-3 space-y-2">
+                    {fieldMemos.map((memo: any) => (
+                      <div
+                        key={memo.id}
+                        className="rounded-xl border bg-white px-3 py-3"
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <div className="text-[12px] font-semibold text-gray-800">
+                            {memo.author ?? "작업자"}
+                          </div>
+                          <div className="text-[11px] text-gray-400">
+                            {memo.createdAt ?? "-"}
+                          </div>
+                        </div>
+                        <div className="text-[13px] text-gray-700">
+                          {memo.text}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 현장메모 입력 */}
+                <div className="rounded-2xl border bg-white p-3">
+                  <div className="mb-2 text-[12px] text-gray-600">
+                    현장메모 작성
+                  </div>
+
+                  <div className="flex gap-2">
+                    <textarea
+                      value={fieldMemoText}
+                      onChange={(e) => setFieldMemoText(e.target.value)}
+                      placeholder="현장 작업 메모를 입력해줘. (예: 피킹 완료, 박스 부족 확인, 관리자 전달 등)"
+                      className="min-h-[88px] flex-1 resize-none rounded-xl border px-3 py-2 text-[13px] outline-none focus:border-emerald-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddFieldMemoClick}
+                      disabled={!fieldMemoText.trim()}
+                      className="self-end rounded-xl bg-emerald-600 px-4 py-2 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                    >
+                      등록
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 아이템 테이블 */}
       <div className="flex-1 overflow-auto rounded-2xl border bg-gray-50">
         <table className="min-w-full border-collapse text-[12px]">
@@ -423,7 +585,7 @@ export function OrderDetail({
                 residualStep !== "NONE" || remainEa > 0 || !!residualInfoMap[code];
 
               const handleRowClick = () => {
-                onSelectItemForPreview?.(it);
+                // 행 클릭은 그대로 두고 싶으면 여기서 아무 것도 안 해도 됨
               };
 
               /** ✅ 버튼 라벨 */
@@ -463,7 +625,35 @@ export function OrderDetail({
                   className="cursor-pointer bg-white hover:bg-blue-50"
                   onClick={handleRowClick}
                 >
-                  <td className="border-t px-3 py-2 text-[12px]">{name}</td>
+                  <td className="border-t px-3 py-2 text-[12px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate">{name}</span>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleImagePreview(it);
+                        }}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                        title="이미지 미리보기"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                          <path
+                            d="M9 7l1.2-2h3.6L15 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3Z"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
 
                   <td className="border-t px-3 py-2 text-right">
                     {Number(qty).toLocaleString()} EA
@@ -812,6 +1002,60 @@ export function OrderDetail({
         directTransfer={residualStatusTargetCode ? transferInfoMap[residualStatusTargetCode] ?? null : null}
         draft={residualStatusTargetCode ? residualDraftMap[residualStatusTargetCode] ?? null : null}
       />
+
+            {/* ================= 이미지 프리뷰 모달 ================= */}
+      {imgPreviewOpen && imgPreviewItem && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40"
+          onClick={() => {
+            setImgPreviewOpen(false);
+            setImgPreviewItem(null);
+          }}
+        >
+          <div
+            className="w-[520px] max-w-[92vw] rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="text-sm font-semibold">
+                {(imgPreviewItem as any).name ?? "상품 이미지"}
+              </div>
+              <button
+                type="button"
+                className="text-gray-400 hover:text-gray-700"
+                onClick={() => {
+                  setImgPreviewOpen(false);
+                  setImgPreviewItem(null);
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4">
+              {getItemImageUrl(imgPreviewItem) ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={getItemImageUrl(imgPreviewItem)}
+                  alt={(imgPreviewItem as any).name ?? "preview"}
+                  className="h-[360px] w-full rounded-xl border object-contain bg-white"
+                />
+              ) : (
+                <div className="flex h-[360px] items-center justify-center rounded-xl border bg-gray-50 text-sm text-gray-500">
+                  이미지가 없어. (item.imageUrl 넣어야 보여)
+                </div>
+              )}
+
+              <div className="mt-3 text-[12px] text-gray-600">
+                코드:{" "}
+                <span className="font-mono text-gray-800">
+                  {(imgPreviewItem as any).code ?? (imgPreviewItem as any).itemCode ?? "-"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

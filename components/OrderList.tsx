@@ -12,6 +12,9 @@ type Props = {
 
   onRefresh?: () => void;
 
+  // ✅ 긴급호출
+  onOpenEmergency?: () => void;
+
   // ✅ 차량출고: 1단계 일괄 지정이송 모달 열기
   onOpenCarBatch?: () => void;
 };
@@ -21,35 +24,44 @@ export function OrderList({
   activeOrderId,
   onSelectOrder,
   onRefresh,
+  onOpenEmergency,
   onOpenCarBatch,
 }: Props): ReactElement {
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
       <div className="mb-3 flex items-center justify-between">
-        <div className="text-xs text-gray-500">주문서 목록</div>
+        <div className="text-sm font-semibold">주문서 목록</div>
 
-        {/* ✅ 버튼 영역 */}
         <div className="flex items-center gap-2">
+          {onOpenEmergency && (
+            <button
+              type="button"
+              onClick={onOpenEmergency}
+              className="rounded-full bg-red-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-red-700"
+            >
+              긴급호출
+            </button>
+          )}
+
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="rounded-full bg-blue-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
+            >
+              새로고침
+            </button>
+          )}
+
           {onOpenCarBatch && (
             <button
               type="button"
               onClick={onOpenCarBatch}
-              className="rounded-full bg-emerald-600 px-4 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
-              title="차량출고 주문 1단계(파렛트) 일괄 지정이송"
+              className="rounded-full border border-gray-300 bg-white px-3 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
             >
-              파렛트 일괄이송
+              차량출고 일괄이송
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={onRefresh}
-            className="rounded-full bg-blue-600 px-4 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-            disabled={!onRefresh}
-            title={!onRefresh ? "onRefresh 콜백이 연결되지 않았습니다." : "새로고침"}
-          >
-            새로고침
-          </button>
         </div>
       </div>
 
