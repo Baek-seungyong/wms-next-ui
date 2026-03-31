@@ -1,3 +1,5 @@
+// components/receiving/utils.ts
+
 import type { MoveTarget, PalletStock, ReceivingItem } from "./types";
 import { PALLET_MASTER, PALLET_STOCK } from "./mockData";
 

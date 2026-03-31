@@ -1,3 +1,4 @@
+// components/dashboard/DashboardHome.tsx
 "use client";
 
 import DashboardTile from "./DashboardTile";

@@ -43,6 +43,12 @@ export function LayoutShell({ children }: LayoutShellProps) {
                 >
                   <span>2. Picking 작업 현황</span>
                 </Link>
+                <Link
+                  href="/processing"
+                  className="navbar-dropdown-link"
+                >
+                  <span>3. 후가공 관리</span>
+                </Link>
               </div>
             </div>
 
@@ -83,6 +89,7 @@ export function LayoutShell({ children }: LayoutShellProps) {
             <Link href="/monitoring" className="navbar-link">
               모니터링
             </Link>
+
 
             {/* 🔹 관리자 드롭다운 */}
             <div className="navbar-link navbar-has-dropdown">

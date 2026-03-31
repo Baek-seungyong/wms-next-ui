@@ -1,4 +1,4 @@
-// components/OrderDetail.tsx
+//components/OrderDetail.tsx
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
@@ -10,6 +10,8 @@ import type {
   TransferInfo,
   ResidualTransferInfo,
   ResidualTransferPayload,
+  LocationStatus,
+  AmrCallStatus,
 } from "./types";
 import { statusBadgeClass } from "./types";
 
@@ -24,6 +26,7 @@ import type { ResidualDraft, TransferFlowStep } from "./TransferFlowModal/types"
 import { ResidualTransferModal } from "./ResidualTransferModal";
 import { ProductManageModal } from "./ProductManageModal";
 import type { CarBatchTransferPayload } from "./CarBatchTransferModal/types";
+import { useRouter } from "next/navigation";
 
 type Props = {
   order: Order | null;
@@ -33,8 +36,6 @@ type Props = {
   onUpdateItems?: (orderId: string, nextItems: OrderItem[]) => void;
   onAddFieldMemo?: (orderId: string, text: string) => void;
 };
-
-type LocationStatus = "창고" | "입고중" | "작업중" | "출고중";
 
 const locationBadgeClass = (loc: LocationStatus) => {
   switch (loc) {
@@ -51,7 +52,19 @@ const locationBadgeClass = (loc: LocationStatus) => {
   }
 };
 
-/** ✅ 잔량 프로세스 단계 */
+const amrStatusBadgeClass = (status?: AmrCallStatus) => {
+  switch (status) {
+    case "이송대기":
+      return "border-gray-200 bg-gray-100 text-gray-700";
+    case "이송중":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "이송완료":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    default:
+      return "border-gray-200 bg-gray-100 text-gray-400";
+  }
+};
+
 type ResidualStep = "NONE" | "PREP_CALLING" | "READY_MOVE" | "DONE";
 
 type ManageTarget = {
@@ -59,13 +72,23 @@ type ManageTarget = {
   name: string;
   orderEaQty: number;
   pickingStock: number;
-  // "현재 토트 재고"로 쓸 값 (아이템에 있으면 사용, 없으면 0)
   toteStock: number;
-  // 1BOX 내품수량(아이템에 있으면 사용, 없으면 0)
   boxEa: number;
-  // 현재 위치 뱃지용
   location: LocationStatus;
+
+  calledToteBoxId?: string | null;
+  calledToteBoxStock?: number;
+
+  calledPalletId?: string | null;
+  calledPalletStock?: number;
+  isPalletCalled?: boolean;
 };
+
+const buildToteBoxId = (orderId: string, code: string) =>
+  `TB-${orderId.slice(-4)}-${code.replace(/[^A-Z0-9]/g, "").slice(-4)}`;
+
+const buildPalletId = (orderId: string, code: string) =>
+  `PL-${orderId.slice(-4)}-${code.replace(/[^A-Z0-9]/g, "").slice(-4)}`;
 
 export function OrderDetail({
   order,
@@ -75,11 +98,9 @@ export function OrderDetail({
   onUpdateItems,
   onAddFieldMemo,
 }: Props): ReactElement | null {
-  /* ================= 재고/경고 ================= */
+  const router = useRouter();
   const hasLowStock = useMemo(() => items.some((i) => (i as any).lowStock), [items]);
 
-  /* ================= AMR/위치 상태 ================= */
-  const [amrRouteMap, setAmrRouteMap] = useState<Record<string, string>>({});
   const [locationMap, setLocationMap] = useState<Record<string, LocationStatus>>({
     "P-001": "창고",
     "P-013": "입고중",
@@ -87,7 +108,6 @@ export function OrderDetail({
     "L-009": "출고중",
   });
 
-  /* ================= 지정이송/잔량이송 상태 ================= */
   const [transferInfoMap, setTransferInfoMap] = useState<Record<string, TransferInfo | undefined>>(
     {},
   );
@@ -102,14 +122,12 @@ export function OrderDetail({
       if (code && dt) next[code] = dt;
     }
     setTransferInfoMap(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order?.id]);
+  }, [order?.id, items]);
 
   const [residualInfoMap, setResidualInfoMap] = useState<
     Record<string, ResidualTransferInfo | undefined>
   >({});
 
-  /** ✅ 잔량 단계/임시저장(닫고 나가도 이어가기) */
   const [residualStepMap, setResidualStepMap] = useState<Record<string, ResidualStep | undefined>>(
     {},
   );
@@ -117,11 +135,9 @@ export function OrderDetail({
     {},
   );
 
-  /* ================= 잔량 결과 모달(기존 ResidualTransferModal) ================= */
   const [residualStatusOpen, setResidualStatusOpen] = useState(false);
   const [residualStatusTargetCode, setResidualStatusTargetCode] = useState<string | null>(null);
 
-  /* ================= 재고 보충 마킹 ================= */
   const [markedList, setMarkedList] = useState<ReplenishMark[]>([]);
   useEffect(() => {
     setMarkedList(getReplenishMarks());
@@ -133,14 +149,12 @@ export function OrderDetail({
   };
   const isProductMarked = (code: string) => markedList.some((m) => m.code === code);
 
-  /* ================= 토트 재고(수정 반영용) =================
-   * - items는 props라 직접 바꾸기 어려우니까, 화면에서만 덮어씌우는 map으로 관리
-   */
   const [toteStockMap, setToteStockMap] = useState<Record<string, number>>({});
 
   const getToteStock = (it: OrderItem) => {
     const code = (it as any).code ?? (it as any).itemCode ?? "";
     const base =
+      (it as any).calledToteBoxStock ??
       (it as any).toteStock ??
       (it as any).toteEaQty ??
       (it as any).toteQty ??
@@ -149,7 +163,11 @@ export function OrderDetail({
     return toteStockMap[code] ?? Number(base ?? 0);
   };
 
-  /* ================= (신) 통합 모달 상태 ================= */
+  const getLocation = (it: OrderItem) => {
+    const code = (it as any).code ?? (it as any).itemCode ?? "";
+    return ((it as any).locationStatus as LocationStatus | undefined) ?? locationMap[code] ?? "창고";
+  };
+
   const [flowOpen, setFlowOpen] = useState(false);
   const [flowTarget, setFlowTarget] = useState<{
     code: string;
@@ -157,24 +175,22 @@ export function OrderDetail({
     orderEaQty: number;
   } | null>(null);
 
-  /** ✅ 버튼 하나로 열기 */
   const openTransferFlow = (code: string, name: string, orderEaQty: number) => {
     setFlowTarget({ code, name, orderEaQty });
     setFlowOpen(true);
   };
 
   const applyCarBatchTransferToItems = (payload: CarBatchTransferPayload) => {
-  if (!order?.id || !onUpdateItems) return;
+    if (!order?.id || !onUpdateItems) return;
 
-  const nextItems = items.map((it) => ({
-    ...(it as any),
-    carBatchTransfer: payload,
-  })) as any;
+    const nextItems = items.map((it) => ({
+      ...(it as any),
+      carBatchTransfer: payload,
+    })) as any;
 
-  onUpdateItems(order.id, nextItems);
-};
+    onUpdateItems(order.id, nextItems);
+  };
 
-  /* ================= 이미지 프리뷰(아이콘 토글) ================= */
   const [imgPreviewOpen, setImgPreviewOpen] = useState(false);
   const [imgPreviewItem, setImgPreviewItem] = useState<OrderItem | null>(null);
 
@@ -205,21 +221,16 @@ export function OrderDetail({
     setImgPreviewOpen(true);
   };
 
-   /* ================= 커뮤니케이션 히스토리 ================= */
+  const [processingInfoOpen, setProcessingInfoOpen] = useState(false);
   const [commOpen, setCommOpen] = useState(false);
   const [fieldMemoText, setFieldMemoText] = useState("");
 
   const communication = (order as any)?.communication ?? {};
   const customerMemo = String(communication.customerMemo ?? "").trim();
   const managerMemo = String(communication.managerMemo ?? "").trim();
-  const fieldMemos = Array.isArray(communication.fieldMemos)
-    ? communication.fieldMemos
-    : [];
+  const fieldMemos = Array.isArray(communication.fieldMemos) ? communication.fieldMemos : [];
 
-  const communicationCount =
-    (customerMemo ? 1 : 0) +
-    (managerMemo ? 1 : 0) +
-    fieldMemos.length;
+  const communicationCount = (customerMemo ? 1 : 0) + (managerMemo ? 1 : 0) + fieldMemos.length;
 
   const handleAddFieldMemoClick = () => {
     if (!order?.id) return;
@@ -231,10 +242,6 @@ export function OrderDetail({
     setCommOpen(true);
   };
 
-  /** ================= 단위 정보(계산용) =================
-   * - TransferFlowModal 상단의 '파렛트/박스/낱개' 자동 계산용
-   * - 데이터가 없으면 0으로 들어가서 계산이 일부/전체 비활성화됨
-   */
   const getEaPerBoxByCode = (code: string) => {
     const it = items.find((x) => ((x as any).code ?? (x as any).itemCode ?? "") === code);
     if (!it) return 0;
@@ -268,11 +275,8 @@ export function OrderDetail({
     openManageModalFromItem(it);
   };
 
-  /* ================= 제품관리(관리 버튼) 모달 ================= */
   const [manageOpen, setManageOpen] = useState(false);
   const [manageTarget, setManageTarget] = useState<ManageTarget | null>(null);
-
-  // 재고수정 입력값
   const [editToteEa, setEditToteEa] = useState<string>("");
 
   const openManageModalFromItem = (it: OrderItem) => {
@@ -280,10 +284,9 @@ export function OrderDetail({
     const name = (it as any).name ?? "";
     const orderEaQty = Number((it as any).qty ?? (it as any).orderQty ?? 0);
     const pickingStock = Number((it as any).pickingStock ?? (it as any).stockQty ?? 0);
-    const location: LocationStatus = locationMap[code] ?? "창고";
+    const location = getLocation(it);
 
     const toteStock = getToteStock(it);
-
     const boxEa = Number(
       (it as any).boxEa ??
         (it as any).eaPerBox ??
@@ -300,9 +303,13 @@ export function OrderDetail({
       toteStock,
       boxEa,
       location,
+      calledToteBoxId: (it as any).calledToteBoxId ?? null,
+      calledToteBoxStock: Number((it as any).calledToteBoxStock ?? toteStock ?? 0),
+      calledPalletId: (it as any).calledPalletId ?? null,
+      calledPalletStock: Number((it as any).calledPalletStock ?? 0),
+      isPalletCalled: !!(it as any).isPalletCalled,
     });
 
-    // 모달 열릴 때 입력값 기본 세팅 (현재 토트 재고)
     setEditToteEa(String(toteStock));
     setManageOpen(true);
   };
@@ -313,8 +320,23 @@ export function OrderDetail({
     setEditToteEa("");
   };
 
+  const updateItemInOrder = (code: string, updater: (item: OrderItem) => OrderItem) => {
+    if (!order?.id || !onUpdateItems) return;
+    const nextItems = items.map((it) => {
+      const itCode = (it as any).code ?? (it as any).itemCode ?? "";
+      if (itCode !== code) return it;
+      return updater(it);
+    });
+    onUpdateItems(order.id, nextItems);
+  };
+
   const handleApplyToteStock = () => {
-    if (!manageTarget) return;
+    if (!manageTarget || !order?.id) return;
+
+    if (!manageTarget.calledToteBoxId) {
+      alert("먼저 토트박스를 호출한 뒤 수정해줘.");
+      return;
+    }
 
     const next = Number(editToteEa);
     if (!Number.isFinite(next) || next < 0) {
@@ -323,13 +345,96 @@ export function OrderDetail({
     }
 
     setToteStockMap((prev) => ({ ...prev, [manageTarget.code]: next }));
-    alert(`"${manageTarget.name}" 토트 재고를 ${next.toLocaleString()} EA로 수정했어.`);
-    // 모달 상단 표시도 즉시 갱신되도록
-    setManageTarget((prev) => (prev ? { ...prev, toteStock: next } : prev));
+    setManageTarget((prev) =>
+      prev
+        ? {
+            ...prev,
+            toteStock: next,
+            calledToteBoxStock: next,
+          }
+        : prev,
+    );
+
+    updateItemInOrder(manageTarget.code, (item) => ({
+      ...(item as any),
+      toteStock: next,
+      calledToteBoxStock: next,
+    }));
+
+    alert(
+      `"${manageTarget.name}" 토트박스(${manageTarget.calledToteBoxId}) 재고를 ${next.toLocaleString()} EA로 수정했어.`,
+    );
+  };
+
+  const handleCallReplenishPallet = () => {
+    if (!manageTarget || !order?.id) return;
+
+    const palletId =
+      manageTarget.calledPalletId || buildPalletId(order.id, manageTarget.code);
+
+    const palletStock =
+      manageTarget.calledPalletStock && manageTarget.calledPalletStock > 0
+        ? manageTarget.calledPalletStock
+        : Number(getEaPerPalletByCode(manageTarget.code) || 0);
+
+    setManageTarget((prev) =>
+      prev
+        ? {
+            ...prev,
+            calledPalletId: palletId,
+            calledPalletStock: palletStock,
+            isPalletCalled: true,
+            location: "입고중",
+          }
+        : prev,
+    );
+
+    setLocationMap((prev) => ({ ...prev, [manageTarget.code]: "입고중" }));
+
+    updateItemInOrder(manageTarget.code, (item) => ({
+      ...(item as any),
+      calledPalletId: palletId,
+      calledPalletStock: palletStock,
+      isPalletCalled: true,
+      locationStatus: "입고중",
+    }));
+
+    alert(`${manageTarget.name} 파렛트(${palletId})를 호출했어.`);
+  };
+
+  const handleReturnReplenishPallet = () => {
+    if (!manageTarget || !order?.id) return;
+
+    if (!manageTarget.calledPalletId || !manageTarget.isPalletCalled) {
+      alert("회송할 파렛트가 없어.");
+      return;
+    }
+
+    const palletId = manageTarget.calledPalletId;
+
+    setManageTarget((prev) =>
+      prev
+        ? {
+            ...prev,
+            calledPalletId: null,
+            calledPalletStock: 0,
+            isPalletCalled: false,
+          }
+        : prev,
+    );
+
+    updateItemInOrder(manageTarget.code, (item) => ({
+      ...(item as any),
+      calledPalletId: null,
+      calledPalletStock: 0,
+      isPalletCalled: false,
+    }));
+
+    alert(`${manageTarget.name} 파렛트(${palletId})를 회송했어.`);
   };
 
   const handleReplenish1Box = () => {
-    if (!manageTarget) return;
+    if (!manageTarget || !order?.id) return;
 
     const boxEa = Number(manageTarget.boxEa ?? 0);
     if (!boxEa || boxEa <= 0) {
@@ -337,18 +442,156 @@ export function OrderDetail({
       return;
     }
 
-    const cur = toteStockMap[manageTarget.code] ?? manageTarget.toteStock ?? 0;
-    const next = cur + boxEa;
+    if (!manageTarget.calledToteBoxId) {
+      alert("먼저 토트박스를 호출해줘.");
+      return;
+    }
 
-    // UI상 토트 재고 +1BOX 반영
-    setToteStockMap((prev) => ({ ...prev, [manageTarget.code]: next }));
-    setManageTarget((prev) => (prev ? { ...prev, toteStock: next } : prev));
+    if (!manageTarget.calledPalletId || !manageTarget.isPalletCalled) {
+      alert("먼저 파렛트를 호출해줘.");
+      return;
+    }
 
-    // “입고중”으로 바꿔서 작업 흐름 느낌 주기
+    const curTote = toteStockMap[manageTarget.code] ?? manageTarget.toteStock ?? 0;
+    const curPallet = Number(manageTarget.calledPalletStock ?? 0);
+
+    if (curPallet < boxEa) {
+      alert("호출된 파렛트 재고가 부족해서 1BOX 보충을 할 수 없어.");
+      return;
+    }
+
+    const nextTote = curTote + boxEa;
+    const nextPallet = Math.max(0, curPallet - boxEa);
+
+    setToteStockMap((prev) => ({ ...prev, [manageTarget.code]: nextTote }));
+    setManageTarget((prev) =>
+      prev
+        ? {
+            ...prev,
+            toteStock: nextTote,
+            calledToteBoxStock: nextTote,
+            calledPalletStock: nextPallet,
+            location: "입고중",
+          }
+        : prev,
+    );
     setLocationMap((prev) => ({ ...prev, [manageTarget.code]: "입고중" }));
 
+    updateItemInOrder(manageTarget.code, (item) => ({
+      ...(item as any),
+      toteStock: nextTote,
+      calledToteBoxStock: nextTote,
+      calledPalletStock: nextPallet,
+      locationStatus: "입고중",
+    }));
+
     alert(
-      `파렛트에서 1BOX 보충\n- 상품: ${manageTarget.name}\n- +${boxEa.toLocaleString()} EA\n- 토트 재고: ${next.toLocaleString()} EA`,
+      `1BOX 보충 완료\n- 토트박스: ${manageTarget.calledToteBoxId}\n- 파렛트: ${manageTarget.calledPalletId}\n- +${boxEa.toLocaleString()} EA`,
+    );
+  };
+
+  const handleManualCall = (it: OrderItem, routeValue: "피킹" | "파렛트") => {
+    if (!order?.id) return;
+
+    const code = (it as any).code ?? (it as any).itemCode ?? "";
+    const productName = (it as any).name || "해당 상품";
+
+    if (routeValue === "피킹") {
+      const toteId = (it as any).calledToteBoxId ?? buildToteBoxId(order.id, code);
+      const toteStock = Number((it as any).calledToteBoxStock ?? (it as any).toteStock ?? 0);
+
+      updateItemInOrder(code, (item) => ({
+        ...(item as any),
+        callRoute: routeValue,
+        amrCallStatus: "이송중",
+        calledToteBoxId: toteId,
+        calledToteBoxStock: toteStock,
+      }));
+
+      window.setTimeout(() => {
+        updateItemInOrder(code, (item) => ({
+          ...(item as any),
+          callRoute: routeValue,
+          amrCallStatus: "이송완료",
+          locationStatus: "입고중",
+          calledToteBoxId: toteId,
+          calledToteBoxStock: toteStock,
+        }));
+        setLocationMap((prev) => ({ ...prev, [code]: "입고중" }));
+      }, 800);
+
+      alert(`제품 "${productName}" 토트박스(${toteId})가 피킹라인으로 호출되었습니다.`);
+    } else {
+      const palletId = (it as any).calledPalletId ?? buildPalletId(order.id, code);
+      const palletStock = Number((it as any).calledPalletStock ?? getEaPerPalletByCode(code) ?? 0);
+
+      updateItemInOrder(code, (item) => ({
+        ...(item as any),
+        callRoute: routeValue,
+        amrCallStatus: "이송중",
+        calledPalletId: palletId,
+        calledPalletStock: palletStock,
+        isPalletCalled: true,
+      }));
+
+      window.setTimeout(() => {
+        updateItemInOrder(code, (item) => ({
+          ...(item as any),
+          callRoute: routeValue,
+          amrCallStatus: "이송완료",
+          locationStatus: "입고중",
+          calledPalletId: palletId,
+          calledPalletStock: palletStock,
+          isPalletCalled: true,
+        }));
+        setLocationMap((prev) => ({ ...prev, [code]: "입고중" }));
+      }, 800);
+
+      alert(`제품 "${productName}" 파렛트(${palletId})가 피킹라인으로 호출되었습니다.`);
+    }
+
+    const cur = (order as any).status;
+    if (onChangeStatus && (cur === "대기" || cur === "보류")) {
+      onChangeStatus("출고중" as any);
+    }
+  };
+
+  const handleConfirmItem = (it: OrderItem) => {
+    if (!order?.id) return;
+
+    const code = (it as any).code ?? (it as any).itemCode ?? "";
+    const productName = (it as any).name ?? "";
+    const orderQty = Number((it as any).qty ?? (it as any).orderQty ?? 0);
+    const stockQty = Number((it as any).pickingStock ?? (it as any).stockQty ?? 0);
+    const toteStock = getToteStock(it);
+    const alreadyConfirmed = !!(it as any).confirmed;
+
+    if (alreadyConfirmed) {
+      alert(`"${productName}"은 이미 확인 완료된 상품이야.`);
+      return;
+    }
+
+    const nextStock = Math.max(0, stockQty - orderQty);
+    const nextToteStock = Math.max(0, toteStock - orderQty);
+    const nextLowStock = nextStock < orderQty;
+
+    updateItemInOrder(code, (item) => ({
+      ...(item as any),
+      stockQty: nextStock,
+      toteStock: nextToteStock,
+      calledToteBoxStock: nextToteStock,
+      lowStock: nextLowStock,
+      confirmed: true,
+      confirmedQty: orderQty,
+      confirmedAt: new Date().toISOString(),
+      locationStatus: "출고중",
+    }));
+
+    setToteStockMap((prev) => ({ ...prev, [code]: nextToteStock }));
+    setLocationMap((prev) => ({ ...prev, [code]: "출고중" }));
+
+    alert(
+      `상품 확인 완료\n- 상품: ${productName}\n- 차감수량: ${orderQty.toLocaleString()} EA\n- 남은 피킹재고: ${nextStock.toLocaleString()} EA`,
     );
   };
 
@@ -360,7 +603,13 @@ export function OrderDetail({
     );
   }
 
+  const allConfirmed = items.length > 0 && items.every((it) => !!(it as any).confirmed);
+
   const handleClickComplete = () => {
+    if (!allConfirmed) {
+      alert("모든 상품의 확인 버튼을 완료한 뒤 출고 완료를 눌러줘.");
+      return;
+    }
     onComplete?.(items);
   };
 
@@ -368,16 +617,20 @@ export function OrderDetail({
     onChangeStatus?.("보류" as OrderStatus);
   };
 
+  const processingRequired = !!order?.processingLink?.processingRequired;
+  const processingStatus = order?.processingLink?.processingStatus ?? "NONE";
+  const linkedWorkCount = order?.processingLink?.linkedWorkIds?.length ?? 0;
+  const plannedShipDate = order?.plannedShipDate ?? "-";
+  const holdReason = order?.holdReason ?? "-";
+
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
-      {/* 헤더 */}
       <div className="mb-3 flex items-center justify-between">
         <div>
           <div className="text-xs text-gray-500">주문 상세 및 출고 지시</div>
           <div className="mt-0.5 text-[13px] font-semibold">주문번호: {order.id}</div>
           <div className="mt-0.5 text-[11px] text-gray-500">
-            납기일:{" "}
-            <span className="font-medium text-gray-700">{(order as any).dueDate}</span>
+            납기일: <span className="font-medium text-gray-700">{(order as any).dueDate}</span>
           </div>
           <div className="mt-0.5 text-[11px] text-gray-500">
             출고위치:{" "}
@@ -407,6 +660,13 @@ export function OrderDetail({
 
           {hasLowStock && <div className="mt-1 text-[11px] text-red-500">⚠ 피킹창고 재고 부족 상품 있음</div>}
 
+          <div className="mt-1 text-[11px] text-emerald-600">
+            확인완료:{" "}
+            <span className="font-semibold">
+              {items.filter((it) => !!(it as any).confirmed).length} / {items.length}
+            </span>
+          </div>
+
           <div className="mt-2 flex justify-end">
             <button
               type="button"
@@ -419,7 +679,92 @@ export function OrderDetail({
         </div>
       </div>
 
-            {/* ================= 커뮤니케이션 히스토리 ================= */}
+      <div className="mb-3 rounded-2xl border bg-white">
+        <button
+          type="button"
+          onClick={() => setProcessingInfoOpen((v) => !v)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-semibold text-slate-900">후가공 정보</span>
+            <span className="inline-flex min-w-[22px] items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+              {linkedWorkCount}
+            </span>
+            {(processingRequired || linkedWorkCount > 0 || processingStatus !== "NONE") && (
+              <span className="text-[11px] text-amber-500">🔔</span>
+            )}
+          </div>
+
+          <span className="text-[11px] text-gray-400">{processingInfoOpen ? "접기" : "열기"}</span>
+        </button>
+
+        {processingInfoOpen && (
+          <div className="border-t px-4 py-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <div className="text-[12px] text-gray-500">
+                  주문 단위 후가공 상태 / 출고예정일 / 연결 작업 확인
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  router.push("/processing");
+                }}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
+              >
+                후가공 작업
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+              <div className="rounded-xl bg-slate-50 px-3 py-3">
+                <div className="text-[11px] text-gray-500">후가공 필요</div>
+                <div className="mt-1 text-[13px] font-semibold text-slate-900">
+                  {processingRequired ? "예" : "아니오"}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 px-3 py-3">
+                <div className="text-[11px] text-gray-500">후가공 상태</div>
+                <div className="mt-1 text-[13px] font-semibold text-slate-900">
+                  {processingStatus}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 px-3 py-3">
+                <div className="text-[11px] text-gray-500">연결 작업 수</div>
+                <div className="mt-1 text-[13px] font-semibold text-slate-900">
+                  {linkedWorkCount}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 px-3 py-3">
+                <div className="text-[11px] text-gray-500">출고예정일</div>
+                <div className="mt-1 text-[13px] font-semibold text-slate-900">
+                  {plannedShipDate}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 px-3 py-3">
+                <div className="text-[11px] text-gray-500">주문 상태</div>
+                <div className="mt-1 text-[13px] font-semibold text-slate-900">
+                  {order.status ?? "-"}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 px-3 py-3">
+                <div className="text-[11px] text-gray-500">보류 사유</div>
+                <div className="mt-1 text-[13px] font-semibold text-slate-900">
+                  {holdReason}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="mb-3 rounded-2xl border bg-white">
         <button
           type="button"
@@ -427,28 +772,21 @@ export function OrderDetail({
           className="flex w-full items-center justify-between px-4 py-3 text-left"
         >
           <div className="flex items-center gap-2">
-            <span className="text-[13px] font-semibold text-blue-600">
-              커뮤니케이션 히스토리
-            </span>
-
+            <span className="text-[13px] font-semibold text-blue-600">커뮤니케이션 히스토리</span>
             <span className="inline-flex min-w-[22px] items-center justify-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
               {communicationCount}
             </span>
-
             {(customerMemo || managerMemo || fieldMemos.length > 0) && (
               <span className="text-[11px] text-amber-500">🔔</span>
             )}
           </div>
 
-          <span className="text-[11px] text-gray-400">
-            {commOpen ? "접기" : "열기"}
-          </span>
+          <span className="text-[11px] text-gray-400">{commOpen ? "접기" : "열기"}</span>
         </button>
 
         {commOpen && (
           <div className="border-t px-4 py-4">
             <div className="space-y-3">
-              {/* 고객메모 */}
               {customerMemo && (
                 <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
                   <div className="mb-1 flex items-center gap-2">
@@ -461,7 +799,6 @@ export function OrderDetail({
                 </div>
               )}
 
-              {/* 관리자메모 */}
               {managerMemo && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
                   <div className="mb-1 flex items-center gap-2">
@@ -474,15 +811,12 @@ export function OrderDetail({
                 </div>
               )}
 
-              {/* 현장메모 목록 */}
               <div className="rounded-2xl border bg-gray-50 px-4 py-3">
                 <div className="mb-3 flex items-center gap-2">
                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                     현장메모
                   </span>
-                  <span className="text-[11px] text-gray-500">
-                    현장에서만 작성 가능
-                  </span>
+                  <span className="text-[11px] text-gray-500">현장에서만 작성 가능</span>
                 </div>
 
                 {fieldMemos.length === 0 ? (
@@ -492,31 +826,21 @@ export function OrderDetail({
                 ) : (
                   <div className="mb-3 space-y-2">
                     {fieldMemos.map((memo: any) => (
-                      <div
-                        key={memo.id}
-                        className="rounded-xl border bg-white px-3 py-3"
-                      >
+                      <div key={memo.id} className="rounded-xl border bg-white px-3 py-3">
                         <div className="mb-1 flex items-center justify-between gap-2">
                           <div className="text-[12px] font-semibold text-gray-800">
                             {memo.author ?? "작업자"}
                           </div>
-                          <div className="text-[11px] text-gray-400">
-                            {memo.createdAt ?? "-"}
-                          </div>
+                          <div className="text-[11px] text-gray-400">{memo.createdAt ?? "-"}</div>
                         </div>
-                        <div className="text-[13px] text-gray-700">
-                          {memo.text}
-                        </div>
+                        <div className="text-[13px] text-gray-700">{memo.text}</div>
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* 현장메모 입력 */}
                 <div className="rounded-2xl border bg-white p-3">
-                  <div className="mb-2 text-[12px] text-gray-600">
-                    현장메모 작성
-                  </div>
+                  <div className="mb-2 text-[12px] text-gray-600">현장메모 작성</div>
 
                   <div className="flex gap-2">
                     <textarea
@@ -541,7 +865,6 @@ export function OrderDetail({
         )}
       </div>
 
-      {/* 아이템 테이블 */}
       <div className="flex-1 overflow-auto rounded-2xl border bg-gray-50">
         <table className="min-w-full border-collapse text-[12px]">
           <thead className="bg-gray-100">
@@ -554,6 +877,7 @@ export function OrderDetail({
               <th className="border-b px-3 py-2 text-center">지정이송</th>
               <th className="border-b px-3 py-2 text-center">토트박스 위치</th>
               <th className="border-b px-3 py-2 text-center">재고관리</th>
+              <th className="border-b px-3 py-2 text-center">확인</th>
             </tr>
           </thead>
 
@@ -565,30 +889,24 @@ export function OrderDetail({
               const pickingStock = Number((it as any).pickingStock ?? (it as any).stockQty ?? 0);
               const lowStock = (it as any).lowStock;
 
-              const routeValue = amrRouteMap[code] ?? "피킹";
-              const location: LocationStatus = locationMap[code] ?? "창고";
+              const routeValue = ((it as any).callRoute ?? "피킹") as "피킹" | "파렛트";
+              const amrCallStatus = (it as any).amrCallStatus as AmrCallStatus | undefined;
+              const location = getLocation(it);
               const marked = isProductMarked(code);
+              const confirmed = !!(it as any).confirmed;
 
               const transferInfo = transferInfoMap[code];
               const isTransferring = transferInfo?.status === "이송중";
 
-              // ✅ 잔량 계산(지정이송 잔량 - 잔량출고 누적)
               const baseRemain = transferInfo?.remainingEaQty ?? 0;
               const residualDone = transferInfo?.residualOutboundEaQty ?? 0;
               const remainEa = Math.max(0, baseRemain - residualDone);
 
-              // ✅ 잔량 프로세스 단계
               const residualStep: ResidualStep = residualStepMap[code] ?? "NONE";
 
-              // ✅ 잔량 프로세스가 한번이라도 시작됐으면 버튼 유지
               const hasResidualFlow =
                 residualStep !== "NONE" || remainEa > 0 || !!residualInfoMap[code];
 
-              const handleRowClick = () => {
-                // 행 클릭은 그대로 두고 싶으면 여기서 아무 것도 안 해도 됨
-              };
-
-              /** ✅ 버튼 라벨 */
               const getTransferButtonLabel = () => {
                 if (!isTransferring) return "지정이송";
 
@@ -603,28 +921,21 @@ export function OrderDetail({
               };
 
               const handleTransferButtonClick = () => {
-                // ✅ DONE이면 결과 모달(ResidualTransferModal)로
                 if (isTransferring && hasResidualFlow && residualStep === "DONE") {
                   setResidualStatusTargetCode(code);
                   setResidualStatusOpen(true);
                   return;
                 }
 
-                // ✅ 그 외는 통합 모달 열기(2/3스텝 이어서 가능)
                 openTransferFlow(code, name, Number(qty));
 
-                // ✅ 잔량 남아있는데 단계 NONE이면 2단계 시작
                 if (isTransferring && remainEa > 0 && residualStep === "NONE") {
                   setResidualStepMap((prev) => ({ ...prev, [code]: "PREP_CALLING" }));
                 }
               };
 
               return (
-                <tr
-                  key={code}
-                  className="cursor-pointer bg-white hover:bg-blue-50"
-                  onClick={handleRowClick}
-                >
+                <tr key={code} className="cursor-pointer bg-white hover:bg-blue-50">
                   <td className="border-t px-3 py-2 text-[12px]">
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate">{name}</span>
@@ -655,9 +966,7 @@ export function OrderDetail({
                     </div>
                   </td>
 
-                  <td className="border-t px-3 py-2 text-right">
-                    {Number(qty).toLocaleString()} EA
-                  </td>
+                  <td className="border-t px-3 py-2 text-right">{Number(qty).toLocaleString()} EA</td>
 
                   <td className="border-t px-3 py-2 text-right">
                     {Number(pickingStock).toLocaleString()} EA
@@ -675,13 +984,17 @@ export function OrderDetail({
                     )}
                   </td>
 
-                  {/* AMR 호출 */}
                   <td className="border-t px-3 py-2 text-center">
                     <div className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                       <select
                         className="rounded border px-2 py-0.5 text-[11px]"
                         value={routeValue}
-                        onChange={(e) => setAmrRouteMap((prev) => ({ ...prev, [code]: e.target.value }))}
+                        onChange={(e) => {
+                          updateItemInOrder(code, (item) => ({
+                            ...(item as any),
+                            callRoute: e.target.value as "피킹" | "파렛트",
+                          }));
+                        }}
                       >
                         <option value="피킹">피킹</option>
                         <option value="파렛트">파렛트</option>
@@ -690,34 +1003,26 @@ export function OrderDetail({
                       <button
                         type="button"
                         className="rounded-full bg-gray-900 px-2 py-0.5 text-[11px] text-white"
-                        onClick={() => {
-                          const productName = name || "해당 상품";
-
-                          if (routeValue === "피킹") {
-                            alert(`제품 "${productName}" 토트박스가 피킹라인으로 호출되었습니다.`);
-                          } else {
-                            alert(`제품 "${productName}" 파렛트가 피킹라인으로 호출되었습니다.`);
-                          }
-
-                          setLocationMap((prev) => ({ ...prev, [code]: "입고중" }));
-
-                          const cur = (order as any).status;
-                          if (onChangeStatus && (cur === "대기" || cur === "보류")) {
-                            onChangeStatus("출고중" as any);
-                          }
-                        }}
+                        onClick={() => handleManualCall(it, routeValue)}
                       >
                         호출
                       </button>
+
+                      <span
+                        className={`inline-flex min-w-[64px] items-center justify-center rounded-full border px-2 py-0.5 text-[11px] ${amrStatusBadgeClass(
+                          amrCallStatus,
+                        )}`}
+                      >
+                        {amrCallStatus ?? "미호출"}
+                      </span>
                     </div>
                   </td>
 
-                  {/* ✅ 지정이송/잔량 단일 흐름 버튼 */}
                   <td className="border-t px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                     <div className="flex flex-col items-center gap-1">
                       <button
                         type="button"
-                        className={`rounded-full px-2 py-0.5 text-[11px] border ${
+                        className={`rounded-full border px-2 py-0.5 text-[11px] ${
                           !isTransferring
                             ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
                             : hasResidualFlow
@@ -729,17 +1034,14 @@ export function OrderDetail({
                         {getTransferButtonLabel()}
                       </button>
 
-                      {/* ✅ 잔량 표시 */}
                       {isTransferring && (
                         <div className="text-[11px] text-gray-500">
-                          잔량{" "}
-                          <span className="font-semibold text-gray-700">{remainEa.toLocaleString()}</span>
+                          잔량 <span className="font-semibold text-gray-700">{remainEa.toLocaleString()}</span>
                         </div>
                       )}
                     </div>
                   </td>
 
-                  {/* 위치 */}
                   <td className="border-t px-3 py-2 text-center">
                     <span
                       className={`inline-flex min-w-[60px] justify-center rounded-full px-2 py-0.5 text-[11px] ${locationBadgeClass(
@@ -750,12 +1052,11 @@ export function OrderDetail({
                     </span>
                   </td>
 
-                  {/* 재고관리(모달) */}
                   <td className="border-t px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
                       onClick={() => openManageModalFromItem(it)}
-                      className={`mx-auto inline-flex items-center justify-center rounded-md px-3 py-1 text-[12px] border transition font-medium ${
+                      className={`mx-auto inline-flex items-center justify-center rounded-md border px-3 py-1 text-[12px] font-medium transition ${
                         marked
                           ? "border-blue-600 bg-blue-600 text-white hover:opacity-90"
                           : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
@@ -765,6 +1066,21 @@ export function OrderDetail({
                       관리
                     </button>
                   </td>
+
+                  <td className="border-t px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmItem(it)}
+                      disabled={confirmed}
+                      className={`mx-auto inline-flex min-w-[72px] items-center justify-center rounded-md border px-3 py-1 text-[12px] font-medium transition ${
+                        confirmed
+                          ? "cursor-default border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      {confirmed ? "확인완료" : "확인"}
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -772,7 +1088,6 @@ export function OrderDetail({
         </table>
       </div>
 
-      {/* 하단 버튼 */}
       <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
         <div className="space-y-1" />
         <div className="flex items-center gap-2">
@@ -798,13 +1113,16 @@ export function OrderDetail({
         </div>
       </div>
 
-      {/* ================= 제품관리 모달 ================= */}
       <ProductManageModal
         open={manageOpen}
         target={manageTarget}
         displayToteEa={manageTarget ? (toteStockMap[manageTarget.code] ?? manageTarget.toteStock) : 0}
         displayLocation={
-          manageTarget ? (locationMap[manageTarget.code] ?? manageTarget.location) : "창고"
+          manageTarget
+            ? (((items.find((x) => x.code === manageTarget.code) as any)?.locationStatus as LocationStatus | undefined) ??
+                locationMap[manageTarget.code] ??
+                manageTarget.location)
+            : "창고"
         }
         isMarked={manageTarget ? isProductMarked(manageTarget.code) : false}
         editToteEa={editToteEa}
@@ -816,11 +1134,11 @@ export function OrderDetail({
         }}
         onApplyToteStock={handleApplyToteStock}
         onReplenish1Box={handleReplenish1Box}
+        onCallReplenishPallet={handleCallReplenishPallet}
+        onReturnReplenishPallet={handleReturnReplenishPallet}
         locationBadgeClass={locationBadgeClass}
-        onCallReplenishPallet={() => alert(`${manageTarget.name} 파렛트를 호출합니다.`)}
       />
 
-      {/* ================= (신) 통합 모달 ================= */}
       <TransferFlowModal
         open={flowOpen}
         onClose={() => setFlowOpen(false)}
@@ -842,7 +1160,6 @@ export function OrderDetail({
           const residualDone = t.residualOutboundEaQty ?? 0;
           return Math.max(0, baseRemain - residualDone);
         })()}
-        /** ✅ 3스텝 기준(1~3) */
         initialStep={(() => {
           const code = flowTarget?.code;
           if (!code) return 1 as TransferFlowStep;
@@ -865,15 +1182,12 @@ export function OrderDetail({
           return 2 as TransferFlowStep;
         })()}
         initialDraft={flowTarget?.code ? residualDraftMap[flowTarget.code] : undefined}
-        /** ✅ 닫아도 이어가기 저장 */
         onSaveProgress={(step, draft) => {
           const code = flowTarget?.code;
           if (!code) return;
 
           const nextStep: ResidualStep =
-            step === 2 ? "PREP_CALLING" :
-            step === 3 ? "READY_MOVE" :
-            "PREP_CALLING";
+            step === 2 ? "PREP_CALLING" : step === 3 ? "READY_MOVE" : "PREP_CALLING";
 
           setResidualStepMap((prev) => {
             if (prev[code] === nextStep) return prev;
@@ -893,39 +1207,31 @@ export function OrderDetail({
           const merged: TransferInfo = {
             ...info,
             orderEaQty: flowTarget?.orderEaQty ?? 0,
-            remainingEaQty:
-              (flowTarget?.orderEaQty ?? 0) - (info.transferEaQty ?? 0),
+            remainingEaQty: (flowTarget?.orderEaQty ?? 0) - (info.transferEaQty ?? 0),
           };
 
-          // 1️⃣ 기존 로컬 상태 반영
           setTransferInfoMap((prev) => ({ ...prev, [code]: merged }));
           setLocationMap((prev) => ({ ...prev, [code]: "출고중" }));
 
-          // 2️⃣ ✅ 부모(itemsByOrderId)에도 저장 (여기 안에 들어가야 함)
           if (order?.id && onUpdateItems) {
             const orderId = order.id;
 
             const nextItems = items.map((it) => {
-              const itCode =
-                (it as any).code ?? (it as any).itemCode ?? "";
+              const itCode = (it as any).code ?? (it as any).itemCode ?? "";
 
               if (itCode !== code) return it;
 
               return {
                 ...(it as any),
                 directTransfer: merged,
+                locationStatus: "출고중",
               } as any;
             });
 
             onUpdateItems(orderId, nextItems);
           }
 
-          // 3️⃣ 지정이송 후 잔량 처리
-          const remainEa = Math.max(
-            0,
-            (flowTarget?.orderEaQty ?? 0) -
-              (info.transferEaQty ?? 0),
-          );
+          const remainEa = Math.max(0, (flowTarget?.orderEaQty ?? 0) - (info.transferEaQty ?? 0));
 
           if (remainEa > 0) {
             setResidualStepMap((prev) => ({
@@ -957,7 +1263,6 @@ export function OrderDetail({
           const code = payload.productCode;
           if (!code) return;
 
-          // 1) 지정이송쪽 누적 잔량출고 EA 반영(잔량 계산용)
           setTransferInfoMap((prev) => {
             const cur = prev[code];
             if (!cur) return prev;
@@ -974,7 +1279,6 @@ export function OrderDetail({
             };
           });
 
-          // 2) 잔량 이송 현황 저장 (ResidualTransferModal 조회용)
           setResidualInfoMap((prev) => ({
             ...prev,
             [code]: {
@@ -989,12 +1293,10 @@ export function OrderDetail({
             },
           }));
 
-          // 3) DONE 처리(여기서만 DONE!)
           setResidualStepMap((prev) => ({ ...prev, [code]: "DONE" }));
         }}
       />
 
-      {/* ✅ 잔량 결과/내역 모달 */}
       <ResidualTransferModal
         open={residualStatusOpen}
         onClose={() => setResidualStatusOpen(false)}
@@ -1003,7 +1305,6 @@ export function OrderDetail({
         draft={residualStatusTargetCode ? residualDraftMap[residualStatusTargetCode] ?? null : null}
       />
 
-            {/* ================= 이미지 프리뷰 모달 ================= */}
       {imgPreviewOpen && imgPreviewItem && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40"
@@ -1017,9 +1318,7 @@ export function OrderDetail({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="text-sm font-semibold">
-                {(imgPreviewItem as any).name ?? "상품 이미지"}
-              </div>
+              <div className="text-sm font-semibold">{(imgPreviewItem as any).name ?? "상품 이미지"}</div>
               <button
                 type="button"
                 className="text-gray-400 hover:text-gray-700"
@@ -1034,7 +1333,6 @@ export function OrderDetail({
 
             <div className="p-4">
               {getItemImageUrl(imgPreviewItem) ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={getItemImageUrl(imgPreviewItem)}
                   alt={(imgPreviewItem as any).name ?? "preview"}

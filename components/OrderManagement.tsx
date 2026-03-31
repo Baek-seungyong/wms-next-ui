@@ -1,14 +1,12 @@
-// components/OrderManagement.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Order, OrderItem, OrderStatus } from "./types";
 import { OrderList } from "./OrderList";
 import { OrderDetail } from "./OrderDetail";
 import { RobotProductCallModal } from "./RobotProductCallModal";
 import { CarBatchTransferModal } from "./CarBatchTransferModal";
 
-// 🔹 상품별 이미지 매핑 (실제 파일명에 맞게 수정해서 사용)
 const PRODUCT_IMAGE_MAP: Record<string, string> = {
   "P-001": "/images/products/P-001.png",
   "P-013": "/images/products/P-013.png",
@@ -18,7 +16,6 @@ const PRODUCT_IMAGE_MAP: Record<string, string> = {
 
 type ZoneFilter = "ALL" | "수도권" | "비수도권" | "차량출고";
 
-// ✅ page.tsx에서 초기값으로 쓰기 위해 export
 export const baseOrders: Order[] = [
   {
     id: "ORD-251114-01",
@@ -61,7 +58,6 @@ export const baseOrders: Order[] = [
   { id: "ORD-251116-03", customer: "H연구소", dueDate: "2025-11-19", status: "출고중", zone: "차량출고" } as any,
 ];
 
-// ✅ 제품 카탈로그 (주문마다 여기서 랜덤으로 뽑아씀)
 type ProductCatalogItem = {
   code: string;
   name: string;
@@ -88,7 +84,6 @@ const PRODUCT_CATALOG: ProductCatalogItem[] = [
   { code: "B-102", name: "박스 1L 전용", boxEa: 40, palletEa: 400 },
 ];
 
-// ✅ 주문ID 기반으로 "항상 같은 랜덤"이 나오도록 시드 랜덤 생성기
 const hashSeed = (s: string) => {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -122,16 +117,16 @@ const pickUnique = <T,>(arr: T[], count: number, rnd: () => number): T[] => {
 const pickFrom = (candidates: number[], rnd: () => number) =>
   candidates[Math.floor(rnd() * candidates.length)];
 
+const buildToteBoxId = (orderId: string, code: string, index: number) =>
+  `TB-${orderId.slice(-4)}-${code.replace(/[^A-Z0-9]/g, "").slice(-4)}-${String(index + 1).padStart(2, "0")}`;
+
 export const buildInitialItemsByOrder = (orders: Order[]): Record<string, OrderItem[]> => {
   const map: Record<string, OrderItem[]> = {};
 
   orders.forEach((o) => {
     const rnd = mulberry32(hashSeed(o.id));
+    const itemCount = 4 + Math.floor(rnd() * 4);
 
-    // ✅ 주문마다 품목 개수 다르게 (4~7개)
-    const itemCount = 4 + Math.floor(rnd() * 4); // 4~7
-
-    // ✅ "차량출고"는 용기류(P-코드) 비중 높게
     const catalog =
       o.zone === "차량출고"
         ? [
@@ -142,10 +137,7 @@ export const buildInitialItemsByOrder = (orders: Order[]): Record<string, OrderI
 
     const picked = pickUnique(catalog, itemCount, rnd);
 
-    // ✅ 차량출고는 대량 수량 위주
     const vehicleQtyCandidates = [3000, 5000, 10000];
-
-    // ✅ 일반 주문은 중소량 다양화
     const normalQtyCandidates = [30, 50, 80, 100, 150, 200, 300, 500, 800, 1000, 1500];
 
     const items: OrderItem[] = picked.map((p) => {
@@ -154,11 +146,10 @@ export const buildInitialItemsByOrder = (orders: Order[]): Record<string, OrderI
           ? pickFrom(vehicleQtyCandidates, rnd)
           : pickFrom(normalQtyCandidates, rnd);
 
-      // ✅ 재고는 주문수량 대비 랜덤하게 (부족/여유 섞이게)
       const low = rnd() < 0.35;
-
-      const stockRatio = low ? (0.1 + rnd() * 0.5) : (0.7 + rnd() * 0.7);
+      const stockRatio = low ? 0.1 + rnd() * 0.5 : 0.7 + rnd() * 0.7;
       const stockQty = Math.max(0, Math.floor(orderQty * stockRatio));
+      const toteStock = Math.max(0, Math.floor(stockQty * 0.35));
 
       return {
         code: p.code,
@@ -168,10 +159,20 @@ export const buildInitialItemsByOrder = (orders: Order[]): Record<string, OrderI
         lowStock: low,
         boxEa: p.boxEa,
         palletEa: p.palletEa ?? 0,
-
-        // ✅ OrderDetail 프리뷰 모달에서 사용할 이미지 URL
         imageUrl: PRODUCT_IMAGE_MAP[p.code] ?? "",
-      } as any;
+        toteStock,
+        callRoute: "피킹",
+        amrCallStatus: undefined,
+        locationStatus: "창고",
+        confirmed: false,
+        confirmedAt: null,
+        confirmedQty: 0,
+        calledToteBoxId: null,
+        calledToteBoxStock: toteStock,
+        calledPalletId: null,
+        calledPalletStock: 0,
+        isPalletCalled: false,
+      };
     });
 
     map[o.id] = items;
@@ -187,6 +188,11 @@ type Props = {
   setItemsByOrderId: React.Dispatch<React.SetStateAction<Record<string, OrderItem[]>>>;
 };
 
+type BulkCallQueueItem = {
+  orderId: string;
+  code: string;
+};
+
 export default function OrderManagement({
   orders,
   setOrders,
@@ -194,65 +200,67 @@ export default function OrderManagement({
   setItemsByOrderId,
 }: Props) {
   const [activeOrderId, setActiveOrderId] = useState<string>(orders[0]?.id ?? "");
-
-  // 🔸 출고 구분 필터
   const [zoneFilter, setZoneFilter] = useState<ZoneFilter>("ALL");
-
-  // ✅ 차량출고: 파렛트 일괄이송 모달
   const [carBatchOpen, setCarBatchOpen] = useState(false);
-
-  // ✅ 주문별 체크 상태(모달에서 유지됨)
   const [carBatchDraftByOrder, setCarBatchDraftByOrder] = useState<
     Record<string, Record<string, boolean>>
   >({});
-
-  // 🔸 긴급 호출 모달
   const [robotModalOpen, setRobotModalOpen] = useState(false);
 
-  // 필터링된 주문 목록
+  const [bulkCallQueue, setBulkCallQueue] = useState<BulkCallQueueItem[]>([]);
+  const [bulkCallRunning, setBulkCallRunning] = useState(false);
+
   const visibleOrders = useMemo(() => {
     if (zoneFilter === "ALL") return orders;
     return orders.filter((o) => o.zone === zoneFilter);
   }, [orders, zoneFilter]);
 
-  // 현재 활성 주문 (필터 고려)
   const activeOrder = useMemo(() => {
     if (visibleOrders.length === 0) return orders[0];
-    return (
-      visibleOrders.find((o) => o.id === activeOrderId) ??
-      visibleOrders[0] ??
-      orders[0]
-    );
+    return visibleOrders.find((o) => o.id === activeOrderId) ?? visibleOrders[0] ?? orders[0];
   }, [visibleOrders, activeOrderId, orders]);
 
   const activeItems = itemsByOrderId[activeOrder?.id ?? ""] ?? [];
 
-  // 상태 변경
+  const isRegionBulkCallVisible = zoneFilter === "수도권" || zoneFilter === "비수도권";
+
   const updateOrderStatus = (orderId: string, status: OrderStatus) => {
     setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
   };
 
-  // 주문 선택 시
+  const updateSingleItem = (
+    orderId: string,
+    code: string,
+    updater: (item: OrderItem) => OrderItem,
+  ) => {
+    setItemsByOrderId((prev) => {
+      const orderItems = prev[orderId] ?? [];
+      return {
+        ...prev,
+        [orderId]: orderItems.map((item) => {
+          const itemCode = (item as any).code ?? (item as any).itemCode ?? "";
+          if (itemCode !== code) return item;
+          return updater(item);
+        }),
+      };
+    });
+  };
+
   const handleSelectOrder = (id: string) => {
     setActiveOrderId(id);
     setOrders((prev) =>
-      prev.map((o) =>
-        o.id === id ? { ...o, status: o.status === "대기" ? "출고중" : o.status } : o,
-      ),
+      prev.map((o) => (o.id === id ? { ...o, status: o.status === "대기" ? "출고중" : o.status } : o)),
     );
   };
 
-  // 필터 탭 변경
   const handleChangeZoneFilter = (zone: ZoneFilter) => {
     setZoneFilter(zone);
     const nextList = zone === "ALL" ? orders : orders.filter((o) => o.zone === zone);
     if (nextList.length > 0) setActiveOrderId(nextList[0].id);
   };
 
-  // 긴급 호출 모달 열기
   const openEmergencyModal = () => setRobotModalOpen(true);
 
-  // 긴급 출고 주문 생성
   const handleCreateEmergencyOrder = (products: { code: string; name: string }[]) => {
     if (products.length === 0) return;
 
@@ -273,8 +281,20 @@ export default function OrderManagement({
       name: p.name,
       orderQty: 0,
       stockQty: 0,
-      imageUrl: "", // 긴급은 일단 없음
-    })) as any;
+      imageUrl: "",
+      toteStock: 0,
+      callRoute: "피킹",
+      amrCallStatus: undefined,
+      locationStatus: "창고",
+      confirmed: false,
+      confirmedAt: null,
+      confirmedQty: 0,
+      calledToteBoxId: null,
+      calledToteBoxStock: 0,
+      calledPalletId: null,
+      calledPalletStock: 0,
+      isPalletCalled: false,
+    }));
 
     setOrders((prev) => [emergencyOrder, ...prev]);
     setItemsByOrderId((prev) => ({ ...prev, [newId]: emergencyItems }));
@@ -318,35 +338,108 @@ export default function OrderManagement({
     );
   };
 
-  // 출고 완료
   const handleCompleteOrder = (newItems: OrderItem[]) => {
     const orderId = activeOrder.id;
     setItemsByOrderId((prev) => ({ ...prev, [orderId]: newItems }));
     updateOrderStatus(orderId, "완료");
   };
 
+  const handleBulkCall = () => {
+    if (!isRegionBulkCallVisible) return;
+
+    const targetOrderIds = visibleOrders.map((o) => o.id);
+    const queue: BulkCallQueueItem[] = [];
+
+    setItemsByOrderId((prev) => {
+      const next = { ...prev };
+
+      for (const orderId of targetOrderIds) {
+        const currentItems = prev[orderId] ?? [];
+        next[orderId] = currentItems.map((item, index) => {
+          const code = item.code;
+          queue.push({ orderId, code });
+
+          const toteId =
+            item.calledToteBoxId ??
+            buildToteBoxId(orderId, code, index);
+
+          return {
+            ...item,
+            callRoute: "피킹",
+            amrCallStatus: "이송대기",
+            calledToteBoxId: toteId,
+            calledToteBoxStock: item.calledToteBoxStock ?? item.toteStock ?? 0,
+          };
+        });
+      }
+
+      return next;
+    });
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        targetOrderIds.includes(o.id) && (o.status === "대기" || o.status === "보류")
+          ? { ...o, status: "출고중" }
+          : o,
+      ),
+    );
+
+    if (queue.length === 0) {
+      alert("호출할 상품이 없어.");
+      return;
+    }
+
+    setBulkCallQueue(queue);
+    setBulkCallRunning(true);
+  };
+
+  useEffect(() => {
+    if (!bulkCallRunning) return;
+    if (bulkCallQueue.length === 0) {
+      setBulkCallRunning(false);
+      return;
+    }
+
+    const current = bulkCallQueue[0];
+
+    updateSingleItem(current.orderId, current.code, (item) => ({
+      ...item,
+      callRoute: "피킹",
+      amrCallStatus: "이송중",
+    }));
+
+    const timer = window.setTimeout(() => {
+      updateSingleItem(current.orderId, current.code, (item) => ({
+        ...item,
+        callRoute: "피킹",
+        amrCallStatus: "이송완료",
+        locationStatus: "입고중",
+      }));
+
+      setBulkCallQueue((prev) => prev.slice(1));
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [bulkCallQueue, bulkCallRunning]);
+
   return (
     <div className="space-y-4">
-      {/* 상단 헤더 */}
-      <div className="shadow-sm border border-gray-200 rounded-2xl bg-white">
-        <div className="p-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="font-semibold text-base">출고 WMS · 출고 작업 지시</span>
-            <select className="border border-gray-300 rounded-md px-2 py-1 text-xs" disabled>
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between gap-4 p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-base font-semibold">출고 WMS · 출고 작업 지시</span>
+            <select className="rounded-md border border-gray-300 px-2 py-1 text-xs" disabled>
               <option>출고위치: 2층 피킹라인</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* 본문 영역 */}
       <div className="grid grid-cols-12 gap-4">
-        {/* 왼쪽: 주문서 목록 + 존 필터 탭 */}
         <div className="col-span-3 flex flex-col gap-2">
-          {/* 출고 구분 탭 */}
           <div className="flex items-center justify-between px-1">
             <span className="text-[11px] text-gray-500">출고 구분</span>
-            <div className="flex gap-2 mt-1">
+            <div className="mt-1 flex gap-2">
               {(
                 [
                   { key: "ALL", label: "전체" },
@@ -361,12 +454,11 @@ export default function OrderManagement({
                     key={tab.key}
                     type="button"
                     onClick={() => handleChangeZoneFilter(tab.key)}
-                    className={`px-4 py-1.5 rounded-full border text-xs transition
-                      ${
-                        active
-                          ? "bg-blue-600 border-blue-600 text-white shadow-sm"
-                          : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
-                      }`}
+                    className={`rounded-full border px-4 py-1.5 text-xs transition ${
+                      active
+                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                        : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                    }`}
                   >
                     {tab.label}
                   </button>
@@ -382,25 +474,26 @@ export default function OrderManagement({
             onRefresh={() => alert("새로고침(데모)")}
             onOpenEmergency={openEmergencyModal}
             onOpenCarBatch={zoneFilter === "차량출고" ? () => setCarBatchOpen(true) : undefined}
+            onOpenBulkCall={handleBulkCall}
+            showBulkCallButton={isRegionBulkCallVisible}
+            bulkCallRunning={bulkCallRunning}
           />
         </div>
 
-        {/* 가운데: 주문 상세 (✅ 6 → 9로 확장) */}
         <div className="col-span-9">
-        <OrderDetail
-          order={activeOrder}
-          items={activeItems}
-          onChangeStatus={(status) => updateOrderStatus(activeOrder.id, status)}
-          onComplete={handleCompleteOrder}
-          onAddFieldMemo={handleAddFieldMemo}
-          onUpdateItems={(orderId, nextItems) => {
-            setItemsByOrderId((prev) => ({ ...prev, [orderId]: nextItems }));
-          }}
-        />
+          <OrderDetail
+            order={activeOrder}
+            items={activeItems}
+            onChangeStatus={(status) => updateOrderStatus(activeOrder.id, status)}
+            onComplete={handleCompleteOrder}
+            onAddFieldMemo={handleAddFieldMemo}
+            onUpdateItems={(orderId, nextItems) => {
+              setItemsByOrderId((prev) => ({ ...prev, [orderId]: nextItems }));
+            }}
+          />
         </div>
       </div>
 
-      {/* ✅ 차량출고: 파렛트 일괄이송(신버전) */}
       <CarBatchTransferModal
         open={carBatchOpen}
         onClose={() => setCarBatchOpen(false)}
@@ -415,7 +508,6 @@ export default function OrderManagement({
         initialOrderId={activeOrder?.id ?? ""}
       />
 
-      {/* 긴급 호출 모달 */}
       <RobotProductCallModal
         open={robotModalOpen}
         mode="emergency"

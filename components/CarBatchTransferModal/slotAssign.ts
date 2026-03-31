@@ -1,3 +1,5 @@
+// components/CarBatchTransferModal/slotAssign.ts
+
 import type { CarBatchTransferSlotId } from "./types";
 
 export const BOXES_PER_PALLET = 10;

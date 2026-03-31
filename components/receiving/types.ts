@@ -1,3 +1,5 @@
+// components/receiving/types.ts
+
 export type ReceivingModalProps = {
   open: boolean;
   onClose: () => void;

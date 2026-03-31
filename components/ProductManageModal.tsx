@@ -1,4 +1,3 @@
-// components/ProductManageModal.tsx
 "use client";
 
 import Image from "next/image";
@@ -13,33 +12,34 @@ export type ManageTarget = {
   toteStock: number;
   boxEa: number;
   location: LocationStatus;
+
+  calledToteBoxId?: string | null;
+  calledToteBoxStock?: number;
+
+  calledPalletId?: string | null;
+  calledPalletStock?: number;
+  isPalletCalled?: boolean;
 };
 
 type Props = {
   open: boolean;
   target: ManageTarget | null;
 
-  // 현재 화면 표시에 쓰는 값들
   displayToteEa: number;
   displayLocation: LocationStatus;
   isMarked: boolean;
 
-  // 입력 상태
   editToteEa: string;
   onChangeEditToteEa: (v: string) => void;
 
-  // actions
   onClose: () => void;
   onToggleMark: () => void;
   onApplyToteStock: () => void;
 
-  /** ✅ 기존 */
   onReplenish1Box: () => void;
-
-  /** ✅ 추가: 토트 보충용 파렛트 호출 버튼 */
   onCallReplenishPallet: () => void;
+  onReturnReplenishPallet: () => void;
 
-  // 배지 class 계산은 OrderDetail에서 쓰던거 그대로 재사용
   locationBadgeClass: (loc: LocationStatus) => string;
 };
 
@@ -56,11 +56,14 @@ export function ProductManageModal({
   onApplyToteStock,
   onReplenish1Box,
   onCallReplenishPallet,
+  onReturnReplenishPallet,
   locationBadgeClass,
 }: Props) {
   if (!open || !target) return null;
 
   const hasBoxEa = !!target.boxEa && target.boxEa > 0;
+  const hasCalledTote = !!target.calledToteBoxId;
+  const hasCalledPallet = !!target.calledPalletId && !!target.isPalletCalled;
 
   return (
     <div
@@ -68,7 +71,7 @@ export function ProductManageModal({
       onClick={onClose}
     >
       <div
-        className="w-[920px] max-w-[95vw] overflow-hidden rounded-2xl bg-white shadow-xl"
+        className="w-[980px] max-w-[95vw] overflow-hidden rounded-2xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 상단 헤더 */}
@@ -93,6 +96,36 @@ export function ProductManageModal({
                 {displayLocation}
               </span>
             </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-full border bg-sky-50 px-3 py-1 text-[11px] text-sky-700">
+                호출 토트박스:
+                <b className="ml-1 text-sky-900">
+                  {target.calledToteBoxId ?? "없음"}
+                </b>
+              </span>
+
+              <span className="rounded-full border bg-slate-50 px-3 py-1 text-[11px] text-slate-700">
+                토트박스 재고:
+                <b className="ml-1 text-slate-900">
+                  {Number(target.calledToteBoxStock ?? displayToteEa).toLocaleString()} EA
+                </b>
+              </span>
+
+              <span className="rounded-full border bg-amber-50 px-3 py-1 text-[11px] text-amber-700">
+                호출 파렛트:
+                <b className="ml-1 text-amber-900">
+                  {target.calledPalletId ?? "없음"}
+                </b>
+              </span>
+
+              <span className="rounded-full border bg-orange-50 px-3 py-1 text-[11px] text-orange-700">
+                파렛트 재고:
+                <b className="ml-1 text-orange-900">
+                  {Number(target.calledPalletStock ?? 0).toLocaleString()} EA
+                </b>
+              </span>
+            </div>
           </div>
 
           <button
@@ -104,16 +137,13 @@ export function ProductManageModal({
           </button>
         </div>
 
-        {/* 본문: 좌(컨트롤) + 우(이미지) */}
         <div className="grid grid-cols-1 md:grid-cols-[1fr_320px]">
-          {/* 좌측 컨텐츠 */}
+          {/* 좌측 */}
           <div className="space-y-4 p-5">
             {/* 1) 재고부족 마킹 */}
             <section className="rounded-xl border p-4">
               <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold">재고부족 마킹</div>
-                </div>
+                <div className="text-sm font-semibold">재고부족 마킹</div>
 
                 <button
                   type="button"
@@ -129,35 +159,20 @@ export function ProductManageModal({
               </div>
             </section>
 
-            {/* 2) 현재 재고 수정 */}
-            <section className="rounded-xl border p-4">
-              <div className="text-sm font-semibold">현재 재고 수정 (토트)</div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  className="w-44 rounded-md border px-3 py-2 text-sm"
-                  value={editToteEa}
-                  onChange={(e) => onChangeEditToteEa(e.target.value)}
-                  placeholder="현재 토트 재고(EA)"
-                />
-                <button
-                  type="button"
-                  className="rounded-md bg-gray-900 px-3 py-2 text-sm text-white hover:opacity-90"
-                  onClick={onApplyToteStock}
-                >
-                  수정 적용
-                </button>
-
-                <div className="text-[11px] text-gray-500">
-                  현재 표시: <b className="text-gray-800">{displayToteEa.toLocaleString()}</b> EA
-                </div>
-              </div>
-            </section>
-
-            {/* 3) 1BOX 보충 호출 */}
+            {/* 2) 1BOX 보충 호출 - 먼저 배치 */}
             <section className="rounded-xl border p-4">
               <div className="text-sm font-semibold">1BOX 보충 호출 (파렛트 → 토트)</div>
+
+              <div className="mt-2 rounded-xl bg-gray-50 p-3 text-[11px] text-gray-600">
+                <div className="flex flex-wrap gap-x-6 gap-y-1">
+                  <div>
+                    호출 토트박스: <b className="text-gray-800">{target.calledToteBoxId ?? "없음"}</b>
+                  </div>
+                  <div>
+                    호출 파렛트: <b className="text-gray-800">{target.calledPalletId ?? "없음"}</b>
+                  </div>
+                </div>
+              </div>
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-[11px] text-gray-600">
@@ -167,22 +182,31 @@ export function ProductManageModal({
                   ) : null}
                 </div>
 
-                {/* ✅ 버튼 2개: (왼쪽) 파렛트 호출 / (오른쪽) 1BOX 보충 호출 */}
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md bg-gray-900 px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
-                    onClick={onCallReplenishPallet}
-                    disabled={!hasBoxEa}
-                  >
-                    파렛트 호출
-                  </button>
+                  {!hasCalledPallet ? (
+                    <button
+                      type="button"
+                      className="rounded-md bg-gray-900 px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
+                      onClick={onCallReplenishPallet}
+                      disabled={!hasBoxEa}
+                    >
+                      파렛트 호출
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      onClick={onReturnReplenishPallet}
+                    >
+                      파렛트 회송
+                    </button>
+                  )}
 
                   <button
                     type="button"
                     className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
                     onClick={onReplenish1Box}
-                    disabled={!hasBoxEa}
+                    disabled={!hasBoxEa || !hasCalledPallet || !hasCalledTote}
                   >
                     1BOX 보충
                   </button>
@@ -191,8 +215,59 @@ export function ProductManageModal({
 
               <div className="mt-2 text-[11px] text-gray-500">
                 보충 후 예상 토트재고:{" "}
-                <b className="text-gray-800">{(displayToteEa + (target.boxEa ?? 0)).toLocaleString()}</b> EA
+                <b className="text-gray-800">
+                  {(displayToteEa + (target.boxEa ?? 0)).toLocaleString()}
+                </b>{" "}
+                EA
               </div>
+
+              {!hasCalledTote && (
+                <div className="mt-2 text-[11px] text-red-500">
+                  먼저 토트박스가 호출되어 있어야 1BOX 보충을 진행할 수 있어.
+                </div>
+              )}
+            </section>
+
+            {/* 3) 현재 재고 수정 - 아래로 이동 */}
+            <section className="rounded-xl border p-4">
+              <div className="text-sm font-semibold">현재 재고 수정 (토트)</div>
+
+              <div className="mt-2 rounded-xl bg-gray-50 p-3 text-[11px] text-gray-600">
+                <div>
+                  수정 대상 토트박스:{" "}
+                  <b className="text-gray-800">{target.calledToteBoxId ?? "없음"}</b>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  className="w-44 rounded-md border px-3 py-2 text-sm"
+                  value={editToteEa}
+                  onChange={(e) => onChangeEditToteEa(e.target.value)}
+                  placeholder="현재 토트 재고(EA)"
+                  disabled={!hasCalledTote}
+                />
+                <button
+                  type="button"
+                  className="rounded-md bg-gray-900 px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
+                  onClick={onApplyToteStock}
+                  disabled={!hasCalledTote}
+                >
+                  수정 적용
+                </button>
+
+                <div className="text-[11px] text-gray-500">
+                  현재 표시: <b className="text-gray-800">{displayToteEa.toLocaleString()}</b> EA
+                </div>
+              </div>
+
+              {!hasCalledTote && (
+                <div className="mt-2 text-[11px] text-red-500">
+                  아직 호출된 토트박스가 없어. 토트박스를 먼저 호출해줘.
+                </div>
+              )}
             </section>
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -206,8 +281,8 @@ export function ProductManageModal({
             </div>
           </div>
 
-          {/* 우측 이미지 패널 */}
-          <div className="hidden md:flex border-l bg-gray-50 p-6">
+          {/* 우측 이미지 */}
+          <div className="hidden border-l bg-gray-50 p-6 md:flex">
             <div className="flex w-full flex-col items-center justify-center rounded-2xl bg-white p-4 shadow-sm">
               <div className="relative mt-3 h-[220px] w-full">
                 <Image

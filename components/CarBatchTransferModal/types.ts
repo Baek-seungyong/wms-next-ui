@@ -1,3 +1,5 @@
+// components/CarBatchTransferModal/types.ts
+
 export type CarBatchTransferSlotId = string;
 
 export type CarBatchTransferPlan = {

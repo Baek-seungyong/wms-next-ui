@@ -136,8 +136,11 @@ export function PalletDirectTransferModal({
 
   // ---------- 현황 모드용 파렛트 상세 ----------
   const statusPalletDetails = useMemo(() => {
-    if (!existingTransfer) return [];
-    return existingTransfer.palletIds
+    const ids = existingTransfer?.palletIds ?? []; // ✅ 핵심
+
+    if (ids.length === 0) return [];
+
+    return ids
       .map((id) => DEMO_PALLETS.find((p) => p.id === id) || null)
       .filter((p): p is PalletItem => p !== null);
   }, [existingTransfer]);

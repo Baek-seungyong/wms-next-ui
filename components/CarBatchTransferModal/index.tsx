@@ -1,3 +1,4 @@
+// components/CarBatchTransferModal/index.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -243,8 +244,11 @@ export function CarBatchTransferModal({
         status: "이송중",
         productCode: code,
         productName: (it as any).name ?? "",
-        transferEaQty: line.transferEaQty, // ✅ 풀파렛트 EA만
+        palletIds: Array.from({ length: line.fullPallets }).map(
+          (_, idx) => `CBT-${orderId}-${code}-${idx + 1}`,
+        ),
         destinationSlots: destByCode[code] ?? [],
+        transferEaQty: line.transferEaQty,
         orderEaQty: line.orderQty,
         remainingEaQty: Math.max(0, line.orderQty - line.transferEaQty),
         residualOutboundEaQty: 0,
@@ -430,9 +434,9 @@ export function CarBatchTransferModal({
             </div>
 
             {/* RIGHT: ✅ 슬롯선택 제거 → 요약 + 버튼만 */}
-            <div className="col-span-3 h-full flex flex-col border-l">
+            <div className="col-span-3 min-h-0 h-full flex flex-col border-l">
               {/* 스크롤 되는 본문 */}
-              <div className="flex-1 overflow-auto p-4">
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
                 <div className="text-sm font-semibold mb-2">이송 요약</div>
 
                 {plan.plannedPalletCount === 0 ? (

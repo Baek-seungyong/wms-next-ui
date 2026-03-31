@@ -1,3 +1,4 @@
+// components/receiving/ReceivingTabOutView.tsx
 "use client";
 
 import type { PalletMaster, ReceivingItem } from "./types";
@@ -42,7 +43,7 @@ type Props = {
 export function ReceivingTabOutView(props: Props) {
   return (
     <div className="basis-[45%] shrink-0 flex flex-col gap-4 min-w-0">
-      {/* 파렛트 번호 (출고) */}
+      {/* 파렛트 번호 (출고) */}                    
       <section className="space-y-1.5">
         <h3 className="text-xs font-semibold text-gray-700">출고 파렛트번호 (QR코드)</h3>
         <div className="flex gap-2">

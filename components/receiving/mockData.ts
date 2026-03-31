@@ -1,3 +1,4 @@
+// components/receiving/mockData.ts
 import type { PalletMaster, PalletStock, ProductMaster } from "./types";
 
 /** 🔹 예시 상품 마스터 */

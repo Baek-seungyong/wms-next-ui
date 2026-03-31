@@ -1,3 +1,4 @@
+// components/receiving/ReceivingRightPanel.tsx
 "use client";
 
 import Image from "next/image";

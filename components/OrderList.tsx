@@ -1,4 +1,3 @@
-// components/OrderList.tsx
 "use client";
 
 import type { ReactElement } from "react";
@@ -11,12 +10,12 @@ type Props = {
   onSelectOrder: (id: string) => void;
 
   onRefresh?: () => void;
-
-  // ✅ 긴급호출
   onOpenEmergency?: () => void;
-
-  // ✅ 차량출고: 1단계 일괄 지정이송 모달 열기
   onOpenCarBatch?: () => void;
+
+  onOpenBulkCall?: () => void;
+  showBulkCallButton?: boolean;
+  bulkCallRunning?: boolean;
 };
 
 export function OrderList({
@@ -26,6 +25,9 @@ export function OrderList({
   onRefresh,
   onOpenEmergency,
   onOpenCarBatch,
+  onOpenBulkCall,
+  showBulkCallButton = false,
+  bulkCallRunning = false,
 }: Props): ReactElement {
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-white p-4 text-sm">
@@ -33,6 +35,17 @@ export function OrderList({
         <div className="text-sm font-semibold">주문서 목록</div>
 
         <div className="flex items-center gap-2">
+          {showBulkCallButton && onOpenBulkCall && (
+            <button
+              type="button"
+              onClick={onOpenBulkCall}
+              disabled={bulkCallRunning}
+              className="rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {bulkCallRunning ? "전체호출 진행중" : "전체호출"}
+            </button>
+          )}
+
           {onOpenEmergency && (
             <button
               type="button"
@@ -86,14 +99,14 @@ export function OrderList({
                   onClick={() => onSelectOrder(o.id)}
                 >
                   <td className="border-t px-3 py-2 font-mono text-[12px]">{o.id}</td>
-                  <td className="border-t px-3 py-2 text-[12px]">{(o as any).customer}</td>
+                  <td className="border-t px-3 py-2 text-[12px]">{o.customer}</td>
                   <td className="border-t px-3 py-2 text-center">
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] ${statusBadgeClass(
-                        (o as any).status,
+                        o.status,
                       )}`}
                     >
-                      {(o as any).statusLabel ?? (o as any).status}
+                      {(o as any).statusLabel ?? o.status}
                     </span>
                   </td>
                 </tr>
